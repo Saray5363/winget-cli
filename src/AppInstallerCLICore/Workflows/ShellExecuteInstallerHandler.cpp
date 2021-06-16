@@ -42,7 +42,7 @@ namespace AppInstaller::CLI::Workflow
                 }
                 if (waitResult != WAIT_TIMEOUT)
                 {
-                    THROW_LAST_ERROR_MSG("Unexpected WaitForSingleObjectResult: %d", waitResult);
+                    THROW_LAST_ERROR_MSG("Unexpected WaitForSingleObjectResult: %lu", waitResult);
                 }
             }
 
@@ -94,12 +94,6 @@ namespace AppInstaller::CLI::Workflow
                 installerArgs += experienceArgsItr->second;
             }
 
-            // Construct language arg if necessary.
-            if (context.Args.Contains(Execution::Args::Type::Language) && installerSwitches.find(InstallerSwitchType::Language) != installerSwitches.end())
-            {
-                installerArgs += ' ' + installerSwitches.at(InstallerSwitchType::Language);
-            }
-
             // Construct log path arg.
             if (installerSwitches.find(InstallerSwitchType::Log) != installerSwitches.end())
             {
@@ -144,6 +138,7 @@ namespace AppInstaller::CLI::Workflow
 
                 auto path = Runtime::GetPathTo(Runtime::PathName::DefaultLogLocation);
                 path /= Logging::FileLogger::DefaultPrefix();
+                path += '-';
                 path += Utility::ConvertToUTF16(manifest.Id + '.' + manifest.Version);
                 path += '-';
                 path += Utility::GetCurrentTimeForFilename();
