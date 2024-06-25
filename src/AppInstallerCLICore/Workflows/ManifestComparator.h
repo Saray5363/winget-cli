@@ -1,9 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #pragma once
+#include "ExecutionContext.h"
 #include "ExecutionArgs.h"
 #include <winget/Manifest.h>
-#include <AppInstallerRepositorySearch.h>
+#include <winget/RepositorySearch.h>
 
 #include <memory>
 #include <string>
@@ -13,6 +14,23 @@
 
 namespace AppInstaller::CLI::Workflow
 {
+    // Flags to indicate why an installer was not applicable
+    enum class InapplicabilityFlags : int
+    {
+        None = 0x0,
+        OSVersion = 0x1,
+        InstalledScope = 0x2,
+        InstalledType = 0x4,
+        InstalledLocale = 0x8,
+        Locale = 0x10,
+        Scope = 0x20,
+        MachineArchitecture = 0x40,
+        Market = 0x80,
+        InstallerType = 0x100,
+    };
+
+    DEFINE_ENUM_FLAG_OPERATORS(InapplicabilityFlags);
+
     namespace details
     {
         // An interface for defining new filters based on user inputs.
@@ -25,7 +43,7 @@ namespace AppInstaller::CLI::Workflow
             std::string_view Name() const { return m_name; }
 
             // Determines if the installer is applicable based on this field alone.
-            virtual bool IsApplicable(const Manifest::ManifestInstaller& installer) = 0;
+            virtual InapplicabilityFlags IsApplicable(const Manifest::ManifestInstaller& installer) = 0;
 
             // Explains why the filter regarded this installer as inapplicable.
             // Will only be called when IsApplicable returns false.
@@ -33,6 +51,18 @@ namespace AppInstaller::CLI::Workflow
 
         private:
             std::string_view m_name;
+        };
+
+        // The result of ComparisonField::IsFirstBetter
+        enum class ComparisonResult
+        {
+            // The first input is not better than the second input.
+            Negative,
+            // The first input is somewhat better than the second input.
+            // If another comparison has a strong positive result, it will override a weak result.
+            WeakPositive,
+            // The first input is definitely better than the second input.
+            StrongPositive,
         };
 
         // An interface for defining new comparisons based on user inputs.
@@ -43,20 +73,26 @@ namespace AppInstaller::CLI::Workflow
             virtual ~ComparisonField() = default;
 
             // Determines if the first installer is a better choice based on this field alone.
-            virtual bool IsFirstBetter(const Manifest::ManifestInstaller& first, const Manifest::ManifestInstaller& second) = 0;
+            virtual ComparisonResult IsFirstBetter(const Manifest::ManifestInstaller& first, const Manifest::ManifestInstaller& second) = 0;
         };
     }
+
+    struct InstallerAndInapplicabilities
+    {
+        std::optional<Manifest::ManifestInstaller> installer;
+        std::vector<InapplicabilityFlags> inapplicabilitiesInstaller;
+    };
 
     // Class in charge of comparing manifest entries
     struct ManifestComparator
     {
-        ManifestComparator(const Execution::Args&, const Repository::IPackageVersion::Metadata& installationMetadata);
+        ManifestComparator(const Execution::Context& context, const Repository::IPackageVersion::Metadata& installationMetadata);
 
         // Gets the best installer from the manifest, if at least one is applicable.
-        std::optional<Manifest::ManifestInstaller> GetPreferredInstaller(const Manifest::Manifest& manifest);
+        InstallerAndInapplicabilities GetPreferredInstaller(const Manifest::Manifest& manifest);
 
         // Determines if an installer is applicable.
-        bool IsApplicable(const Manifest::ManifestInstaller& installer);
+        InapplicabilityFlags IsApplicable(const Manifest::ManifestInstaller& installer);
 
         // Determines if the first installer is a better choice.
         bool IsFirstBetter(

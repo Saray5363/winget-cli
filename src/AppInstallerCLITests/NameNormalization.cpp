@@ -13,11 +13,11 @@ using namespace AppInstaller::Utility;
 // copy the file(s) back to the git managed location to update.
 TEST_CASE("NameNorm_Update_Database_Initial", "[.]")
 {
-    std::ifstream namesStream(TestCommon::TestDataFile("InputNames.txt"));
+    std::ifstream namesStream(TestCommon::TestDataFile("InputNames.txt").GetPath());
     REQUIRE(namesStream);
-    std::ifstream publishersStream(TestCommon::TestDataFile("InputPublishers.txt"));
+    std::ifstream publishersStream(TestCommon::TestDataFile("InputPublishers.txt").GetPath());
     REQUIRE(publishersStream);
-    std::ofstream resultsStream(TestCommon::TestDataFile("NormalizationInitialIdsUpdate.txt"), std::ofstream::out | std::ofstream::trunc | std::ofstream::binary);
+    std::ofstream resultsStream(TestCommon::TestDataFile("NormalizationInitialIdsUpdate.txt").GetPath(), std::ofstream::out | std::ofstream::trunc | std::ofstream::binary);
     REQUIRE(resultsStream);
 
     // Far larger than any one value; hopefully
@@ -60,11 +60,11 @@ TEST_CASE("NameNorm_Update_Database_Initial", "[.]")
 // source.
 TEST_CASE("NameNorm_Database_Initial", "[name_norm]")
 {
-    std::ifstream namesStream(TestCommon::TestDataFile("InputNames.txt"));
+    std::ifstream namesStream(TestCommon::TestDataFile("InputNames.txt").GetPath());
     REQUIRE(namesStream);
-    std::ifstream publishersStream(TestCommon::TestDataFile("InputPublishers.txt"));
+    std::ifstream publishersStream(TestCommon::TestDataFile("InputPublishers.txt").GetPath());
     REQUIRE(publishersStream);
-    std::ifstream resultsStream(TestCommon::TestDataFile("NormalizationInitialIds.txt"));
+    std::ifstream resultsStream(TestCommon::TestDataFile("NormalizationInitialIds.txt").GetPath());
     REQUIRE(resultsStream);
 
     // Far larger than any one value; hopefully
@@ -130,4 +130,27 @@ TEST_CASE("NameNorm_KBNumbers", "[name_norm]")
     NameNormalizer normer(NormalizationVersion::Initial);
 
     REQUIRE(normer.Normalize("Fix for (KB42)", {}).Name() == "FixforKB42");
+}
+
+TEST_CASE("NameNorm_Initial_PreserveWhitespace", "[name_norm]")
+{
+    NameNormalizer normer(NormalizationVersion::InitialPreserveWhiteSpace);
+
+    REQUIRE(normer.NormalizeName("Some Name").Name() == "Some Name");
+    REQUIRE(normer.NormalizePublisher("Some Publisher Corp") == "Some Publisher");
+}
+
+TEST_CASE("NameNorm_GetNormalizedName_GetNormalizedFields", "[name_norm]")
+{
+    NameNormalizer normer(NormalizationVersion::Initial);
+
+    auto normalizedName = normer.NormalizeName("Name(X64)");
+    REQUIRE(normalizedName.GetNormalizedName(NormalizationField::None) == "Name");
+    REQUIRE(normalizedName.GetNormalizedName(NormalizationField::Architecture) == "Name(X64)");
+    REQUIRE(normalizedName.GetNormalizedFields() == NormalizationField::Architecture);
+
+    auto normalizedName2 = normer.NormalizeName("Name");
+    REQUIRE(normalizedName2.GetNormalizedName(NormalizationField::None) == "Name");
+    REQUIRE(normalizedName2.GetNormalizedName(NormalizationField::Architecture) == "Name");
+    REQUIRE(normalizedName2.GetNormalizedFields() == NormalizationField::None);
 }

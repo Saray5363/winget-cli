@@ -1,6 +1,23 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
 #pragma once
+#include "Public/CoCreatableMicrosoftManagementDeploymentClass.h"
 
-//A version of CoCreatableCppWinRtClass that lets you pass in a uuid rather than getting it from a class property.
-#define CoCreatableClassWithCLSIDWithFactory(className, instance, clsid, factory) \
-    InternalWrlCreateCreatorMap(className##instance##_COM, clsid, nullptr, ::Microsoft::WRL::Details::CreateClassFactory<factory>, "minATL$__f")
-#define CoCreatableCppWinRtClassWithCLSID(className, instance, clsid) CoCreatableClassWithCLSIDWithFactory(className, instance, clsid, ::wil::wrl_factory_for_winrt_com_class<className>)
+namespace winrt::Microsoft::Management::Deployment::implementation
+{
+    void SetComCallerName(std::string name);
+    std::string GetComCallerName(std::string defaultNameIfNotSet);
+
+    enum class Capability
+    {
+        PackageManagement,
+        PackageQuery
+    };
+
+    HRESULT EnsureProcessHasCapability(Capability requiredCapability, DWORD callerProcessId);
+    HRESULT EnsureComCallerHasCapability(Capability requiredCapability);
+    std::pair<HRESULT, DWORD> GetCallerProcessId();
+    std::wstring TryGetCallerProcessInfo(DWORD callerProcessId);
+    std::string GetCallerName();
+    bool IsBackgroundProcessForPolicy();
+}

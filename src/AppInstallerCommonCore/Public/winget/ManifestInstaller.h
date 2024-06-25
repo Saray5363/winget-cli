@@ -40,7 +40,16 @@ namespace AppInstaller::Manifest
         string_t MinOSVersion;
 
         // If present, has more precedence than root
-        InstallerTypeEnum InstallerType = InstallerTypeEnum::Unknown;
+        InstallerTypeEnum BaseInstallerType = InstallerTypeEnum::Unknown;
+
+        InstallerTypeEnum NestedInstallerType = InstallerTypeEnum::Unknown;
+
+        InstallerTypeEnum EffectiveInstallerType() const
+        {
+            return IsArchiveType(BaseInstallerType) ? NestedInstallerType : BaseInstallerType;
+        }
+
+        std::vector<NestedInstallerFile> NestedInstallerFiles;
 
         ScopeEnum Scope = ScopeEnum::Unknown;
 
@@ -51,7 +60,17 @@ namespace AppInstaller::Manifest
 
         std::vector<DWORD> InstallerSuccessCodes;
 
+        struct ExpectedReturnCodeInfo
+        {
+            ExpectedReturnCodeEnum ReturnResponseEnum = ExpectedReturnCodeEnum::Unknown;
+            string_t ReturnResponseUrl;
+        };
+
+        std::map<DWORD, ExpectedReturnCodeInfo> ExpectedReturnCodes;
+
         UpdateBehaviorEnum UpdateBehavior = UpdateBehaviorEnum::Install;
+
+        RepairBehaviorEnum RepairBehavior = RepairBehaviorEnum::Unknown;
 
         std::vector<string_t> Commands;
 
@@ -71,6 +90,30 @@ namespace AppInstaller::Manifest
         // For msix only
         std::vector<string_t> RestrictedCapabilities;
 
-        Dependency Dependencies;
+        DependencyList Dependencies;
+
+        bool InstallerAbortsTerminal = false;
+
+        string_t ReleaseDate;
+
+        bool InstallLocationRequired = false;
+
+        bool RequireExplicitUpgrade = false;
+
+        bool DisplayInstallWarnings = false;
+
+        std::vector<UnsupportedArgumentEnum> UnsupportedArguments;
+
+        std::vector<AppInstaller::Utility::Architecture> UnsupportedOSArchitectures;
+
+        std::vector<AppsAndFeaturesEntry> AppsAndFeaturesEntries;
+
+        ElevationRequirementEnum ElevationRequirement = ElevationRequirementEnum::Unknown;
+
+        MarketsInfo Markets;
+
+        InstallationMetadataInfo InstallationMetadata;
+
+        bool DownloadCommandProhibited = false;
     };
 }

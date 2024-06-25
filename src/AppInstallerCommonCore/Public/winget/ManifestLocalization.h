@@ -25,7 +25,36 @@ namespace AppInstaller::Manifest
         ShortDescription,
         Description,
         Tags,
+        Agreements,
+        Documentations,
+        ReleaseNotes,
+        ReleaseNotesUrl,
+        PurchaseUrl,
+        InstallationNotes,
+        Icons,
         Max
+    };
+
+    struct Agreement
+    {
+        string_t Label;
+        string_t AgreementText;
+        string_t AgreementUrl;
+    };
+
+    struct Documentation
+    {
+        string_t DocumentLabel;
+        string_t DocumentUrl;
+    };
+
+    struct Icon
+    {
+        string_t Url;
+        IconFileTypeEnum FileType = IconFileTypeEnum::Unknown;
+        IconResolutionEnum Resolution = IconResolutionEnum::Unknown;
+        IconThemeEnum Theme = IconThemeEnum::Unknown;
+        std::vector<BYTE> Sha256;
     };
 
     namespace details
@@ -40,6 +69,24 @@ namespace AppInstaller::Manifest
         struct LocalizationMapping<Localization::Tags>
         {
             using value_t = std::vector<string_t>;
+        };
+
+        template <>
+        struct LocalizationMapping<Localization::Agreements>
+        {
+            using value_t = std::vector<Agreement>;
+        };
+
+        template <>
+        struct LocalizationMapping<Localization::Documentations>
+        {
+            using value_t = std::vector<Documentation>;
+        };
+
+        template <>
+        struct LocalizationMapping<Localization::Icons>
+        {
+            using value_t = std::vector<Icon>;
         };
 
         // Used to deduce the LocalizationVariant type; making a variant that includes std::monostate and all LocalizationMapping types.

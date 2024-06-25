@@ -24,7 +24,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
     namespace
     {
         // Gets an existing manifest by its rowid., if it exists.
-        std::optional<SQLite::rowid_t> GetExistingManifestId(SQLite::Connection& connection, const Manifest::Manifest& manifest)
+        std::optional<SQLite::rowid_t> GetExistingManifestId(const SQLite::Connection& connection, const Manifest::Manifest& manifest)
         {
             std::optional<SQLite::rowid_t> idId = IdTable::SelectIdByValue(connection, manifest.Id, true);
             if (!idId)
@@ -63,53 +63,65 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
             std::optional<SQLite::rowid_t> channelIdOpt = ChannelTable::SelectIdByValue(connection, channel, true);
             if (!channelIdOpt && !channel.empty())
             {
-                // If an empty channel was given but none was found, we will just not filter on channel.
                 AICLI_LOG(Repo, Info, << "Did not find a Channel { " << channel << " }");
                 return {};
             }
 
             std::optional<SQLite::rowid_t> versionIdOpt;
+            std::vector<std::pair<SQLite::rowid_t, std::string>> versionStrings;
 
-            if (version.empty())
+            if (channelIdOpt)
             {
-                std::vector<std::string> versionStrings;
-                
-                if (channelIdOpt)
-                {
-                    versionStrings = ManifestTable::GetAllValuesByIds<VersionTable, IdTable, ChannelTable>(connection, { id, channelIdOpt.value() });
-                }
-                else
-                {
-                    versionStrings = ManifestTable::GetAllValuesByIds<VersionTable, IdTable>(connection, { id });
-                }
-
-                if (versionStrings.empty())
-                {
-                    AICLI_LOG(Repo, Info, << "Did not find any Versions { " << id << ", " << channel << " }");
-                    return {};
-                }
-
-                // Convert the strings to Versions and sort them
-                std::vector<Utility::Version> versions;
-                for (std::string& v : versionStrings)
-                {
-                    versions.emplace_back(std::move(v));
-                }
-
-                std::sort(versions.begin(), versions.end());
-
-                // Get the last version in the list (the highest version) and its rowid
-                const std::string& latestVersion = versions.back().ToString();
-                versionIdOpt = VersionTable::SelectIdByValue(connection, latestVersion);
+                versionStrings = ManifestTable::GetAllValuesByIds<VersionTable, IdTable, ChannelTable>(connection, { id, channelIdOpt.value() });
             }
             else
             {
-                versionIdOpt = VersionTable::SelectIdByValue(connection, version, true);
+                versionStrings = ManifestTable::GetAllValuesByIds<VersionTable, IdTable>(connection, { id });
+            }
+
+            if (versionStrings.empty())
+            {
+                AICLI_LOG(Repo, Info, << "Did not find any Versions { " << id << ", " << channel << " }");
+                return {};
+            }
+
+            // Convert the strings to Versions and sort them
+            struct VersionAndRow
+            {
+                SQLite::rowid_t Row = 0;
+                Utility::Version Version;
+
+                bool operator<(const VersionAndRow& other) const { return Version < other.Version; }
+            };
+
+            std::vector<VersionAndRow> versions;
+            for (auto& v : versionStrings)
+            {
+                versions.emplace_back(VersionAndRow{ v.first, std::move(v.second) });
+            }
+
+            std::sort(versions.begin(), versions.end());
+
+            if (version.empty())
+            {
+                // Get the last version in the list (the highest version)
+                versionIdOpt = versions.back().Row;
+            }
+            else
+            {
+                VersionAndRow requested;
+                requested.Version = Utility::Version{ std::string(version) };
+
+                auto itr = std::lower_bound(versions.begin(), versions.end(), requested);
+                if (itr != versions.end() && itr->Version == requested.Version)
+                {
+                    versionIdOpt = itr->Row;
+                }
             }
 
             if (!versionIdOpt)
             {
-                AICLI_LOG(Repo, Info, << "Did not find a Version { " << version << " }");
+                AICLI_LOG(Repo, Info, << "Did not find a Version for { " << version << " }");
                 return {};
             }
 
@@ -123,6 +135,11 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
             }
         }
 
+        bool NotNeededInternal(const SQLite::Connection& connection, std::string_view, std::string_view valueName, SQLite::rowid_t id)
+        {
+            return !ManifestTable::IsValueReferenced(connection, valueName, id);
+        }
+
         // Updates the manifest column and related table based on the given value.
         template <typename Table>
         void UpdateManifestValueById(SQLite::Connection& connection, const typename Table::value_t& value, SQLite::rowid_t manifestId, bool overwriteLikeMatch = false)
@@ -133,16 +150,19 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
 
             ManifestTable::UpdateValueIdById<Table>(connection, manifestId, newValueId);
 
-            Table::DeleteIfNotNeededById(connection, oldValueId);
+            if (NotNeededInternal(connection, Table::TableName(), Table::ValueName(), oldValueId))
+            {
+                Table::DeleteById(connection, oldValueId);
+            }
         }
     }
 
-    Schema::Version Interface::GetVersion() const
+    SQLite::Version Interface::GetVersion() const
     {
         return { 1, 0 };
     }
 
-    void Interface::CreateTables(SQLite::Connection& connection)
+    void Interface::CreateTables(SQLite::Connection& connection, CreateOptions options)
     {
         SQLite::Savepoint savepoint = SQLite::Savepoint::Create(connection, "createtables_v1_0");
 
@@ -160,16 +180,16 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
             { MonikerTable::ValueName(), false, false },
             { VersionTable::ValueName(), true, false },
             { ChannelTable::ValueName(), true, false },
-            { PathPartTable::ValueName(), false, true }
+            { PathPartTable::ValueName(), false, WI_IsFlagClear(options, CreateOptions::SupportPathless) }
             });
 
-        TagsTable::Create_deprecated(connection);
-        CommandsTable::Create_deprecated(connection);
+        TagsTable::Create(connection, GetOneToManyTableSchema());
+        CommandsTable::Create(connection, GetOneToManyTableSchema());
 
         savepoint.Commit();
     }
 
-    SQLite::rowid_t Interface::AddManifest(SQLite::Connection& connection, const Manifest::Manifest& manifest, const std::filesystem::path& relativePath)
+    SQLite::rowid_t Interface::AddManifest(SQLite::Connection& connection, const Manifest::Manifest& manifest, const std::optional<std::filesystem::path>& relativePath)
     {
         auto manifestResult = GetExistingManifestId(connection, manifest);
 
@@ -181,7 +201,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
         auto [pathAdded, pathLeafId] = PathPartTable::EnsurePathExists(connection, relativePath, true);
 
         // If we get false from the function, this manifest path already exists in the index.
-        THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS), !pathAdded);
+        THROW_HR_IF(HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS), relativePath && !pathAdded);
 
         // Ensure that all of the 1:1 data exists.
         SQLite::rowid_t idId = IdTable::EnsureExists(connection, manifest.Id, true);
@@ -209,7 +229,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
         return manifestId;
     }
 
-    std::pair<bool, SQLite::rowid_t> Interface::UpdateManifest(SQLite::Connection& connection, const Manifest::Manifest& manifest, const std::filesystem::path& relativePath)
+    std::pair<bool, SQLite::rowid_t> Interface::UpdateManifest(SQLite::Connection& connection, const Manifest::Manifest& manifest, const std::optional<std::filesystem::path>& relativePath)
     {
         auto manifestResult = GetExistingManifestId(connection, manifest);
 
@@ -260,7 +280,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
         auto [existingPathLeafId] = ManifestTable::GetIdsById<PathPartTable>(connection, manifestId);
         auto [pathAdded, newPathLeafId] = PathPartTable::EnsurePathExists(connection, relativePath, true);
 
-        if (pathAdded)
+        if (relativePath && pathAdded)
         {
             // Path was added, so we need to update the manifest table and delete the old path
             ManifestTable::UpdateValueIdById<PathPartTable>(connection, manifestId, newPathLeafId);
@@ -282,30 +302,54 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
         return { indexModified, manifestId };
     }
 
-    SQLite::rowid_t Interface::RemoveManifest(SQLite::Connection& connection, const Manifest::Manifest& manifest, const std::filesystem::path&)
+    SQLite::rowid_t Interface::RemoveManifest(SQLite::Connection& connection, const Manifest::Manifest& manifest)
     {
         auto manifestResult = GetExistingManifestId(connection, manifest);
 
         // If the manifest doesn't actually exist, fail the remove.
         THROW_HR_IF(E_NOT_SET, !manifestResult);
 
-        SQLite::rowid_t manifestId = manifestResult.value();
+        RemoveManifestById(connection, manifestResult.value());
 
+        return manifestResult.value();
+    }
+
+    void Interface::RemoveManifestById(SQLite::Connection& connection, SQLite::rowid_t manifestId)
+    {
         // Get the ids of the values from the manifest table
         auto [idId, nameId, monikerId, versionId, channelId, pathLeafId] = 
             ManifestTable::GetIdsById<IdTable, NameTable, MonikerTable, VersionTable, ChannelTable, PathPartTable>(connection, manifestId);
 
-        SQLite::Savepoint savepoint = SQLite::Savepoint::Create(connection, "removemanifest_v1_0");
+        SQLite::Savepoint savepoint = SQLite::Savepoint::Create(connection, "RemoveManifestById_v1_0");
 
         // Remove the manifest row
         ManifestTable::DeleteById(connection, manifestId);
 
         // Remove all of the 1:1 data that is no longer referenced.
-        IdTable::DeleteIfNotNeededById(connection, idId);
-        NameTable::DeleteIfNotNeededById(connection, nameId);
-        MonikerTable::DeleteIfNotNeededById(connection, monikerId);
-        VersionTable::DeleteIfNotNeededById(connection, versionId);
-        ChannelTable::DeleteIfNotNeededById(connection, channelId);
+        if (NotNeeded(connection, IdTable::TableName(), IdTable::ValueName(), idId))
+        {
+            IdTable::DeleteById(connection, idId);
+        }
+        
+        if (NotNeeded(connection, NameTable::TableName(), NameTable::ValueName(), nameId))
+        {
+            NameTable::DeleteById(connection, nameId);
+        }
+
+        if (NotNeeded(connection, MonikerTable::TableName(), MonikerTable::ValueName(), monikerId))
+        {
+            MonikerTable::DeleteById(connection, monikerId);
+        }
+        
+        if (NotNeeded(connection, VersionTable::TableName(), VersionTable::ValueName(), versionId))
+        {
+            VersionTable::DeleteById(connection, versionId);
+        }
+        
+        if (NotNeeded(connection, ChannelTable::TableName(), ChannelTable::ValueName(), channelId))
+        {
+            ChannelTable::DeleteById(connection, channelId);
+        }
 
         // Remove the path
         PathPartTable::RemovePathById(connection, pathLeafId);
@@ -315,8 +359,11 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
         CommandsTable::DeleteIfNotNeededByManifestId(connection, manifestId);
 
         savepoint.Commit();
+    }
 
-        return manifestId;
+    bool Interface::NotNeeded(const SQLite::Connection& connection, std::string_view tableName, std::string_view valueName, SQLite::rowid_t id) const
+    {
+        return NotNeededInternal(connection, tableName, valueName, id);
     }
 
     void Interface::PrepareForPackaging(SQLite::Connection& connection)
@@ -337,69 +384,47 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
             PathPartTable::ValueName(),
             });
 
-        TagsTable::PrepareForPackaging_deprecated(connection);
-        CommandsTable::PrepareForPackaging_deprecated(connection);
+        TagsTable::PrepareForPackaging(connection, GetOneToManyTableSchema(), false, false);
+        CommandsTable::PrepareForPackaging(connection, GetOneToManyTableSchema(), false, false);
 
         savepoint.Commit();
 
-        // Force the database to actually shrink the file size.
-        // This *must* be done outside of an active transaction.
-        SQLite::Builder::StatementBuilder builder;
-        builder.Vacuum();
-        builder.Execute(connection);
+        Vacuum(connection);
     }
 
     bool Interface::CheckConsistency(const SQLite::Connection& connection, bool log) const
     {
         bool result = true;
 
+#define AICLI_CHECK_CONSISTENCY(_check_) \
+        if (result || log) \
+        { \
+            result = _check_ && result; \
+        }
+
         // Check the manifest table references to it's 1:1 tables
-        if (result || log)
-        {
-            result = ManifestTable::CheckConsistency<IdTable>(connection, log) && result;
-        }
+        AICLI_CHECK_CONSISTENCY(ManifestTable::CheckConsistency<IdTable>(connection, log));
+        AICLI_CHECK_CONSISTENCY(ManifestTable::CheckConsistency<NameTable>(connection, log));
+        AICLI_CHECK_CONSISTENCY(ManifestTable::CheckConsistency<MonikerTable>(connection, log));
+        AICLI_CHECK_CONSISTENCY(ManifestTable::CheckConsistency<VersionTable>(connection, log));
+        AICLI_CHECK_CONSISTENCY(ManifestTable::CheckConsistency<ChannelTable>(connection, log));
+        AICLI_CHECK_CONSISTENCY(ManifestTable::CheckConsistency<PathPartTable>(connection, log));
 
-        if (result || log)
-        {
-            result = ManifestTable::CheckConsistency<NameTable>(connection, log) && result;
-        }
+        // Check the 1:1 tables' consistency
+        AICLI_CHECK_CONSISTENCY(IdTable::CheckConsistency(connection, log));
+        AICLI_CHECK_CONSISTENCY(NameTable::CheckConsistency(connection, log));
+        AICLI_CHECK_CONSISTENCY(MonikerTable::CheckConsistency(connection, log));
+        AICLI_CHECK_CONSISTENCY(VersionTable::CheckConsistency(connection, log));
+        AICLI_CHECK_CONSISTENCY(ChannelTable::CheckConsistency(connection, log));
 
-        if (result || log)
-        {
-            result = ManifestTable::CheckConsistency<MonikerTable>(connection, log) && result;
-        }
-
-        if (result || log)
-        {
-            result = ManifestTable::CheckConsistency<VersionTable>(connection, log) && result;
-        }
-
-        if (result || log)
-        {
-            result = ManifestTable::CheckConsistency<ChannelTable>(connection, log) && result;
-        }
-
-        if (result || log)
-        {
-            result = ManifestTable::CheckConsistency<PathPartTable>(connection, log) && result;
-        }
-
-        // Check the pathpaths table for consistency
-        if (result || log)
-        {
-            result = PathPartTable::CheckConsistency(connection, log) && result;
-        }
+        // Check the pathparts table for consistency
+        AICLI_CHECK_CONSISTENCY(PathPartTable::CheckConsistency(connection, log));
 
         // Check the 1:N map tables for consistency
-        if (result || log)
-        {
-            result = TagsTable::CheckConsistency(connection, log) && result;
-        }
+        AICLI_CHECK_CONSISTENCY(TagsTable::CheckConsistency(connection, log));
+        AICLI_CHECK_CONSISTENCY(CommandsTable::CheckConsistency(connection, log));
 
-        if (result || log)
-        {
-            result = CommandsTable::CheckConsistency(connection, log) && result;
-        }
+#undef AICLI_CHECK_CONSISTENCY
 
         return result;
     }
@@ -440,7 +465,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
         {
             for (auto include : request.Inclusions)
             {
-                for (MatchType match : GetMatchTypeOrder(include.Type))
+                for (MatchType match : GetDefaultMatchTypeOrder(include.Type))
                 {
                     include.Type = match;
                     resultsTable->SearchOnField(include);
@@ -458,7 +483,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
             // Perform search for just the field matching the first filter
             PackageMatchFilter filter = request.Filters[0];
 
-            for (MatchType match : GetMatchTypeOrder(filter.Type))
+            for (MatchType match : GetDefaultMatchTypeOrder(filter.Type))
             {
                 filter.Type = match;
                 resultsTable->SearchOnField(filter);
@@ -478,7 +503,7 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
 
             resultsTable->PrepareToFilter();
 
-            for (MatchType match : GetMatchTypeOrder(filter.Type))
+            for (MatchType match : GetDefaultMatchTypeOrder(filter.Type))
             {
                 filter.Type = match;
                 resultsTable->FilterOnField(filter);
@@ -490,20 +515,22 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
         return resultsTable->GetSearchResults(request.MaximumResults);
     }
 
-    std::optional<std::string> Interface::GetPropertyByManifestId(const SQLite::Connection& connection, SQLite::rowid_t manifestId, PackageVersionProperty property) const
+    std::optional<std::string> Interface::GetPropertyByPrimaryId(const SQLite::Connection& connection, SQLite::rowid_t primaryId, PackageVersionProperty property) const
     {
-        if (!ManifestTable::ExistsById(connection, manifestId))
-        {
-            AICLI_LOG(Repo, Info, << "Did not find manifest by id: " << manifestId);
-            return {};
-        }
-
-        return GetPropertyByManifestIdInternal(connection, manifestId, property);
+        return GetPropertyByManifestIdInternal(connection, primaryId, property);
     }
 
-    std::vector<std::string> Interface::GetMultiPropertyByManifestId(const SQLite::Connection&, SQLite::rowid_t, PackageVersionMultiProperty) const
+    std::vector<std::string> Interface::GetMultiPropertyByPrimaryId(const SQLite::Connection& connection, SQLite::rowid_t primaryId, PackageVersionMultiProperty property) const
     {
-        return {};
+        switch (property)
+        {
+        case PackageVersionMultiProperty::Tag:
+            return TagsTable::GetValuesByManifestId(connection, primaryId);
+        case PackageVersionMultiProperty::Command:
+            return CommandsTable::GetValuesByManifestId(connection, primaryId);
+        default:
+            return {};
+        }
     }
 
     std::optional<SQLite::rowid_t> Interface::GetManifestIdByKey(const SQLite::Connection& connection, SQLite::rowid_t id, std::string_view version, std::string_view channel) const
@@ -511,15 +538,55 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
         return StaticGetManifestIdByKey(connection, id, version, channel);
     }
 
-    std::vector<Utility::VersionAndChannel> Interface::GetVersionKeysById(const SQLite::Connection& connection, SQLite::rowid_t id) const
+    std::optional<SQLite::rowid_t> Interface::GetManifestIdByManifest(const SQLite::Connection& connection, const Manifest::Manifest& manifest) const
+    {
+        return GetExistingManifestId(connection, manifest);
+    }
+
+    std::set<std::pair<SQLite::rowid_t, Utility::NormalizedString>> Interface::GetDependenciesByManifestRowId(const SQLite::Connection&, SQLite::rowid_t) const
+    {
+        return {};
+    }
+
+    std::vector<std::pair<SQLite::rowid_t, Utility::NormalizedString>> Interface::GetDependentsById(const SQLite::Connection&, AppInstaller::Manifest::string_t) const
+    {
+        return {};
+    }
+
+    void Interface::DropTables(SQLite::Connection& connection)
+    {
+        SQLite::Savepoint savepoint = SQLite::Savepoint::Create(connection, "drop_tables_v1_0");
+
+        IdTable::Drop(connection);
+        NameTable::Drop(connection);
+        MonikerTable::Drop(connection);
+        VersionTable::Drop(connection);
+        ChannelTable::Drop(connection);
+
+        PathPartTable::Drop(connection);
+
+        ManifestTable::Drop(connection);
+
+        TagsTable::Drop(connection);
+        CommandsTable::Drop(connection);
+
+        savepoint.Commit();
+    }
+
+    bool Interface::MigrateFrom(SQLite::Connection&, const ISQLiteIndex*)
+    {
+        return false;
+    }
+
+    std::vector<ISQLiteIndex::VersionKey> Interface::GetVersionKeysById(const SQLite::Connection& connection, SQLite::rowid_t id) const
     {
         auto versionsAndChannels = ManifestTable::GetAllValuesById<IdTable, VersionTable, ChannelTable>(connection, id);
 
-        std::vector<Utility::VersionAndChannel> result;
+        std::vector<ISQLiteIndex::VersionKey> result;
         result.reserve(versionsAndChannels.size());
         for (auto&& vac : versionsAndChannels)
         {
-            result.emplace_back(Utility::Version{ std::move(std::get<0>(vac)) }, Utility::Channel{ std::move(std::get<1>(vac)) });
+            result.emplace_back(ISQLiteIndex::VersionKey{ Utility::VersionAndChannel{ Utility::Version{ std::move(std::get<1>(vac)) }, Utility::Channel{ std::move(std::get<2>(vac)) } }, std::get<0>(vac) });
         }
 
         std::sort(result.begin(), result.end());
@@ -549,35 +616,12 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
         return std::make_unique<SearchResultsTable>(connection);
     }
 
-    std::vector<MatchType> Interface::GetMatchTypeOrder(MatchType type) const
-    {
-        switch (type)
-        {
-        case MatchType::Exact:
-            return { MatchType::Exact };
-        case MatchType::CaseInsensitive:
-            return { MatchType::CaseInsensitive };
-        case MatchType::StartsWith:
-            return { MatchType::CaseInsensitive, MatchType::StartsWith };
-        case MatchType::Substring:
-            return { MatchType::CaseInsensitive, MatchType::Substring };
-        case MatchType::Wildcard:
-            return { MatchType::Wildcard };
-        case MatchType::Fuzzy:
-            return { MatchType::CaseInsensitive, MatchType::Fuzzy };
-        case MatchType::FuzzySubstring:
-            return { MatchType::CaseInsensitive, MatchType::Fuzzy, MatchType::Substring, MatchType::FuzzySubstring };
-        default:
-            THROW_HR(E_UNEXPECTED);
-        }
-    }
-
     void Interface::PerformQuerySearch(SearchResultsTable& resultsTable, const RequestMatch& query) const
     {
         // Arbitrary values to create a reusable filter with the given value.
         PackageMatchFilter filter(PackageMatchField::Id, MatchType::Exact, query.Value);
 
-        for (MatchType match : GetMatchTypeOrder(query.Type))
+        for (MatchType match : GetDefaultMatchTypeOrder(query.Type))
         {
             filter.Type = match;
 
@@ -594,17 +638,31 @@ namespace AppInstaller::Repository::Microsoft::Schema::V1_0
         switch (property)
         {
         case AppInstaller::Repository::PackageVersionProperty::Id:
-            return std::get<0>(ManifestTable::GetValuesById<IdTable>(connection, manifestId));
+            return ManifestTable::GetValueById<IdTable>(connection, manifestId);
         case AppInstaller::Repository::PackageVersionProperty::Name:
-            return std::get<0>(ManifestTable::GetValuesById<NameTable>(connection, manifestId));
+            return ManifestTable::GetValueById<NameTable>(connection, manifestId);
         case AppInstaller::Repository::PackageVersionProperty::Version:
-            return std::get<0>(ManifestTable::GetValuesById<VersionTable>(connection, manifestId));
+            return ManifestTable::GetValueById<VersionTable>(connection, manifestId);
         case AppInstaller::Repository::PackageVersionProperty::Channel:
-            return std::get<0>(ManifestTable::GetValuesById<ChannelTable>(connection, manifestId));
+            return ManifestTable::GetValueById<ChannelTable>(connection, manifestId);
         case AppInstaller::Repository::PackageVersionProperty::RelativePath:
             return PathPartTable::GetPathById(connection, std::get<0>(ManifestTable::GetIdsById<PathPartTable>(connection, manifestId)));
+        case AppInstaller::Repository::PackageVersionProperty::Moniker:
+            return ManifestTable::GetValueById<MonikerTable>(connection, manifestId);
         default:
             return {};
         }
+    }
+
+    OneToManyTableSchema Interface::GetOneToManyTableSchema() const
+    {
+        return OneToManyTableSchema::Version_1_0;
+    }
+
+    void Interface::Vacuum(const SQLite::Connection& connection)
+    {
+        SQLite::Builder::StatementBuilder builder;
+        builder.Vacuum();
+        builder.Execute(connection);
     }
 }

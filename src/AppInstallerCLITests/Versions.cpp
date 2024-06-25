@@ -43,6 +43,32 @@ TEST_CASE("VersionParsePlusDash", "[versions]")
     REQUIRE(parts[4].Other == "alpha");
 }
 
+TEST_CASE("VersionParseWithWhitespace", "[versions]")
+{
+    Version version("1. 2.3 . 4 ");
+    const auto& parts = version.GetParts();
+    REQUIRE(parts.size() == 4);
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        INFO(i);
+        REQUIRE(parts[i].Integer == static_cast<uint64_t>(i + 1));
+        REQUIRE(parts[i].Other == "");
+    }
+}
+
+TEST_CASE("VersionParseWithPreamble", "[versions]")
+{
+    Version version("v1.2.3.4");
+    const auto& parts = version.GetParts();
+    REQUIRE(parts.size() == 4);
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        INFO(i);
+        REQUIRE(parts[i].Integer == static_cast<uint64_t>(i + 1));
+        REQUIRE(parts[i].Other == "");
+    }
+}
+
 TEST_CASE("VersionParseCorner", "[versions]")
 {
     Version version1("");
@@ -70,6 +96,22 @@ TEST_CASE("VersionParseCorner", "[versions]")
     REQUIRE(parts.size() == 1);
     REQUIRE(parts[0].Integer == 0);
     REQUIRE(parts[0].Other == "version");
+
+    Version version6(". 1 ");
+    parts = version6.GetParts();
+    REQUIRE(parts.size() == 2);
+    REQUIRE(parts[0].Integer == 0);
+    REQUIRE(parts[0].Other == "");
+    REQUIRE(parts[1].Integer == 1);
+    REQUIRE(parts[1].Other == "");
+
+    Version version7("v1.2a");
+    parts = version7.GetParts();
+    REQUIRE(parts.size() == 2);
+    REQUIRE(parts[0].Integer == 1);
+    REQUIRE(parts[0].Other == "");
+    REQUIRE(parts[1].Integer == 2);
+    REQUIRE(parts[1].Other == "a");
 }
 
 void RequireLessThan(std::string_view a, std::string_view b)
@@ -113,6 +155,18 @@ TEST_CASE("VersionCompare", "[versions]")
     RequireLessThan("13.9.8", "14.1");
 
     RequireEqual("1.0", "1.0.0");
+
+    // Ensure whitespace doesn't affect equality
+    RequireEqual("1.0", "1.0 ");
+    RequireEqual("1.0", "1. 0");
+
+    // Ensure versions with preambles are sorted correctly
+    RequireEqual("1.0", "Version 1.0");
+    RequireEqual("foo1", "bar1");
+    RequireLessThan("v0.0.1", "0.0.2");
+    RequireLessThan("v0.0.1", "v0.0.2");
+    RequireLessThan("1.a2", "1.b1");
+    RequireLessThan("alpha", "beta");
 }
 
 TEST_CASE("VersionAndChannelSort", "[versions]")
@@ -190,4 +244,180 @@ TEST_CASE("VersionUnknown", "[versions]")
 TEST_CASE("VersionUnknownLessThanLatest", "[versions]")
 {
     REQUIRE(Version::CreateUnknown() < Version::CreateLatest());
+}
+
+TEST_CASE("VersionIsEmpty", "[versions]")
+{
+    REQUIRE(Version{}.IsEmpty());
+    REQUIRE(Version{""}.IsEmpty());
+    REQUIRE(!Version{"1"}.IsEmpty());
+    REQUIRE(!Version{"0"}.IsEmpty());
+
+    Version v{ "1" };
+    REQUIRE(!v.IsEmpty());
+    v.Assign("");
+    REQUIRE(v.IsEmpty());
+}
+
+TEST_CASE("VersionPartAt", "[versions]")
+{
+    REQUIRE(Version{}.PartAt(0).Integer == 0);
+    REQUIRE(Version{"1"}.PartAt(0).Integer == 1);
+    REQUIRE(Version{"1"}.PartAt(1).Integer == 0);
+    REQUIRE(Version{"1"}.PartAt(9999).Integer == 0);
+}
+
+TEST_CASE("UInt64Version_Success_FourParts", "[versions]")
+{
+    Version expectedVersion("1.2.3.4");
+    UInt64Version versionNumberFromNumber(0x0001000200030004);
+    UInt64Version versionNumberFromString("1.2.3.4");
+    REQUIRE(expectedVersion == versionNumberFromNumber);
+    REQUIRE(expectedVersion == versionNumberFromString);
+    REQUIRE(expectedVersion.ToString() == versionNumberFromNumber.ToString());
+    REQUIRE(expectedVersion.ToString() == versionNumberFromString.ToString());
+}
+
+TEST_CASE("UInt64Version_Success_LessThanFourParts", "[versions]")
+{
+    UInt64Version versionNumberFromNumber(0x0001000200030000);
+    UInt64Version versionNumberFromString("1.2.3");
+    REQUIRE(versionNumberFromNumber == versionNumberFromString);
+}
+
+TEST_CASE("UInt64Version_Success_NoOverflow", "[versions]")
+{
+    REQUIRE_NOTHROW(UInt64Version("65535.65535.65535.65535")); // 65535 => 0xffff
+    REQUIRE_NOTHROW(UInt64Version(0xffffffffffffffff));
+}
+
+TEST_CASE("UInt64Version_Fail_Overflow", "[versions]")
+{
+    REQUIRE_THROWS(UInt64Version("1.0.0.65536")); // 65536 => 0x10000
+}
+
+TEST_CASE("UInt64Version_Fail_MoreThanFourParts", "[versions]")
+{
+    REQUIRE_THROWS(UInt64Version("1.0.0.0.1"));
+}
+
+TEST_CASE("UInt64Version_Fail_NonNumeric", "[versions]")
+{
+    REQUIRE_THROWS(UInt64Version("1.0.0.a"));
+}
+
+TEST_CASE("ApproximateVersionParse", "[versions]")
+{
+    Version v1_0{ "1.0" };
+    Version v1_0_LessThan{ v1_0, Version::ApproximateComparator::LessThan };
+    Version v1_0_GreaterThan{ v1_0, Version::ApproximateComparator::GreaterThan };
+
+    Version v1_0_LessThanFromString = Version{ "< 1.0" };
+    Version v1_0_GreaterThanFromString = Version{ "> 1.0" };
+
+    REQUIRE_FALSE(v1_0.IsApproximate());
+    REQUIRE(v1_0_LessThanFromString.IsApproximate());
+    REQUIRE(v1_0_GreaterThanFromString.IsApproximate());
+
+    REQUIRE(v1_0_LessThan == v1_0_LessThanFromString);
+    REQUIRE(v1_0_GreaterThan == v1_0_GreaterThanFromString);
+
+    REQUIRE_THROWS(Version{ "< Unknown" });
+    REQUIRE_THROWS(Version{ v1_0_LessThan, Version::ApproximateComparator::LessThan });
+    REQUIRE_THROWS(Version{ Version::CreateUnknown(), Version::ApproximateComparator::LessThan });
+}
+
+TEST_CASE("ApproximateVersionCompare", "[versions]")
+{
+    RequireEqual("< 1.0", "< 1.0");
+    RequireEqual("< 1.0", "< 1.0.0");
+    RequireEqual("> 1.0", "> 1.0");
+    RequireEqual("> 1.0", "> 1.0.0");
+
+    RequireLessThan("< 1.0", "1.0");
+    RequireLessThan("< 1.0", "> 1.0");
+    RequireLessThan("1.0", "> 1.0");
+    RequireLessThan("0.9", "< 1.0");
+    RequireLessThan("> 1.0", "1.1");
+
+    // With latest
+    RequireLessThan("< latest", "latest");
+    RequireLessThan("latest", "> latest");
+    RequireLessThan("9999", "< latest");
+}
+
+TEST_CASE("VersionRange", "[versions]")
+{
+    // Create
+    REQUIRE_NOTHROW(VersionRange{ Version{ "1.0" }, Version{ "2.0" } });
+    REQUIRE_NOTHROW(VersionRange{ Version{ "1.0" }, Version{ "1.0" } });
+    REQUIRE_THROWS(VersionRange{ Version{ "2.0" }, Version{ "1.0" } });
+
+    // Overlaps
+    REQUIRE(VersionRange{ Version{ "1.0" }, Version{ "2.0" } }.Overlaps(VersionRange{ Version{ "2.0" }, Version{ "3.0" } }));
+    REQUIRE(VersionRange{ Version{ "1.0" }, Version{ "2.0" } }.Overlaps(VersionRange{ Version{ "1.0" }, Version{ "1.0" } }));
+    REQUIRE(VersionRange{ Version{ "1.0" }, Version{ "2.0" } }.Overlaps(VersionRange{ Version{ "0.5" }, Version{ "1.5" } }));
+    REQUIRE_FALSE(VersionRange{ Version{ "1.0" }, Version{ "2.0" } }.Overlaps(VersionRange{ Version{ "2.1" }, Version{ "3.0" } }));
+    REQUIRE_FALSE(VersionRange{ Version{ "1.0" }, Version{ "2.0" } }.Overlaps(VersionRange{}));
+
+    // Empty
+    REQUIRE(VersionRange{}.IsEmpty());
+    REQUIRE_THROWS(VersionRange{}.GetMinVersion());
+    REQUIRE_THROWS(VersionRange{}.GetMaxVersion());
+
+    // Less than compare
+    REQUIRE_THROWS(VersionRange{ Version{ "0.5" }, Version{ "1.0" } } < VersionRange{ Version{ "1.0" }, Version{ "2.0" } });
+    REQUIRE_THROWS(VersionRange{} < VersionRange{ Version{ "1.0" }, Version{ "2.0" } });
+    REQUIRE(VersionRange{ Version{ "0.5" }, Version{ "1.0" } } < VersionRange{ Version{ "1.5" }, Version{ "2.0" } });
+    REQUIRE_FALSE(VersionRange{ Version{ "1.5" }, Version{ "2.0" } } < VersionRange{ Version{ "0.5" }, Version{ "1.0" } });
+}
+
+TEST_CASE("GatedVersion", "[versions]")
+{
+    REQUIRE(GatedVersion("1.0.*"sv).IsValidVersion({ "1.0.1" }));
+    REQUIRE(GatedVersion("1.0.*"sv).IsValidVersion({ "1.0" }));
+    REQUIRE(GatedVersion("1.0.*"sv).IsValidVersion({ "1" }));
+    REQUIRE(GatedVersion("1.0.*"sv).IsValidVersion({ "1.0.alpha" }));
+    REQUIRE(GatedVersion("1.0.*"sv).IsValidVersion({ "1.0.1.2.3" }));
+    REQUIRE(GatedVersion("1.0.*"sv).IsValidVersion({ "1.0.*" }));
+    REQUIRE_FALSE(GatedVersion("1.0.*"sv).IsValidVersion({ "1.1.1" }));
+
+    REQUIRE(GatedVersion("1.*.*"sv).IsValidVersion({ "1.*.1" }));
+    REQUIRE(GatedVersion("1.*.*"sv).IsValidVersion({ "1.*.*" }));
+    REQUIRE_FALSE(GatedVersion("1.*.*"sv).IsValidVersion({ "1.1.1" }));
+
+    REQUIRE(GatedVersion("1.0.1"sv).IsValidVersion({ "1.0.1" }));
+    REQUIRE_FALSE(GatedVersion("1.0.1"sv).IsValidVersion({ "1.1.1" }));
+}
+
+TEST_CASE("SemanticVersion", "[versions]")
+{
+    REQUIRE_THROWS_HR(SemanticVersion("1.2.3.4"), E_INVALIDARG);
+    REQUIRE_THROWS_HR(SemanticVersion("1.2abc.3"), E_INVALIDARG);
+
+    SemanticVersion version = SemanticVersion("1.2.3-alpha");
+    REQUIRE(version.IsPrerelease());
+    REQUIRE(version.PrereleaseVersion() == Version("alpha"));
+    REQUIRE(!version.HasBuildMetadata());
+    REQUIRE(version.PartAt(2).Other == "-alpha");
+
+    version = SemanticVersion("1.2.3-4.5.6");
+    REQUIRE(version.IsPrerelease());
+    REQUIRE(version.PrereleaseVersion() == Version("4.5.6"));
+    REQUIRE(!version.HasBuildMetadata());
+    REQUIRE(version.PartAt(2).Other == "-4.5.6");
+
+    // Really shouldn't be allowed, but we are loose here
+    version = SemanticVersion("1.2+build");
+    REQUIRE(!version.IsPrerelease());
+    REQUIRE(version.HasBuildMetadata());
+    REQUIRE(version.BuildMetadata() == Version("build"));
+    REQUIRE(version.PartAt(2).Other == "+build");
+
+    version = SemanticVersion("1.2.3-beta+4.5.6");
+    REQUIRE(version.IsPrerelease());
+    REQUIRE(version.PrereleaseVersion() == Version("beta"));
+    REQUIRE(version.HasBuildMetadata());
+    REQUIRE(version.BuildMetadata() == Version("4.5.6"));
+    REQUIRE(version.PartAt(2).Other == "-beta+4.5.6");
 }

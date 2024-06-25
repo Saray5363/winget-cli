@@ -7,12 +7,13 @@
 #include <string>
 #include <vector>
 
-#include <Public/AppInstallerLogging.h>
+#include <AppInstallerLogging.h>
+#include <AppInstallerFileLogger.h>
 #include <Public/AppInstallerTelemetry.h>
 #include <Telemetry/TraceLogging.h>
 
 #include "TestCommon.h"
-#include "TestHooks.h"
+#include "TestSettings.h"
 
 using namespace winrt;
 using namespace Windows::Foundation;
@@ -20,7 +21,7 @@ using namespace std::string_literals;
 using namespace AppInstaller;
 
 
-// Logs the the AppInstaller log target to break up individual tests
+// Logs the AppInstaller log target to break up individual tests
 struct LoggingBreakListener : public Catch::TestEventListenerBase
 {
     using TestEventListenerBase::TestEventListenerBase;
@@ -47,6 +48,27 @@ struct LoggingBreakListener : public Catch::TestEventListenerBase
 };
 CATCH_REGISTER_LISTENER(LoggingBreakListener);
 
+// Map CATCH exceptions so that WIL doesn't fail fast the tests
+HRESULT __stdcall CatchResultFromCaughtException() WI_PFN_NOEXCEPT
+{
+    try
+    {
+        throw;
+    }
+    catch (const Catch::TestFailureException&)
+    {
+        // REC_E_TEST_FAILURE :: Test failure.
+        // Not sure what could generate this, but it is unlikely that we use it.
+        // Since the message is aligned with the issue it should help diagnosis.
+        return 0x8b051032;
+    }
+    catch (...)
+    {
+        // Means we couldn't map the exception
+        return S_OK;
+    }
+}
+
 int main(int argc, char** argv)
 {
     init_apartment();
@@ -68,12 +90,12 @@ int main(int argc, char** argv)
         }
         else if ("-log"s == argv[i])
         {
-            Logging::AddFileLogger();
+            Logging::FileLogger::Add();
         }
         else if ("-logto"s == argv[i])
         {
             ++i;
-            Logging::AddFileLogger(std::string_view{ argv[i] });
+            Logging::FileLogger::Add(std::filesystem::path{ argv[i] });
         }
         else if ("-tdd"s == argv[i])
         {
@@ -113,7 +135,7 @@ int main(int argc, char** argv)
 
     // Enable logging, to force log string building to run.
     // Disable SQL by default, as it generates 10s of MBs of log file and
-    // increases the the full test run time by 60% or more.
+    // increases the full test run time by 60% or more.
     // By not creating a log target, it will all be thrown away.
     Logging::Log().EnableChannel(Logging::Channel::All);
     if (!keepSQLLogging)
@@ -123,15 +145,15 @@ int main(int argc, char** argv)
     Logging::Log().SetLevel(Logging::Level::Verbose);
     Logging::EnableWilFailureTelemetry();
 
+    wil::SetResultFromCaughtExceptionCallback(CatchResultFromCaughtException);
+
     // Forcibly enable event writing to catch bugs in that code
     g_IsTelemetryProviderEnabled = true;
 
-    // Force all tests to run against settings inside this container.
-    // This prevents test runs from trashing the users actual settings.
-    Runtime::TestHook_SetPathOverride(Runtime::PathName::LocalState, Runtime::GetPathTo(Runtime::PathName::LocalState) / "Tests");
-    Runtime::TestHook_SetPathOverride(Runtime::PathName::UserFileSettings, Runtime::GetPathTo(Runtime::PathName::UserFileSettings) / "Tests");
-    Runtime::TestHook_SetPathOverride(Runtime::PathName::StandardSettings, Runtime::GetPathTo(Runtime::PathName::StandardSettings) / "Tests");
-    Runtime::TestHook_SetPathOverride(Runtime::PathName::SecureSettings, Runtime::GetPathTo(Runtime::PathName::Temp) / "WinGet_SecureSettings_Tests");
+    TestCommon::SetTestPathOverrides();
+
+    // Remove any existing settings files in the new tests path
+    TestCommon::UserSettingsFileGuard settingsGuard;
 
     int result = Catch::Session().run(static_cast<int>(args.size()), args.data());
 

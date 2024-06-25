@@ -30,6 +30,12 @@ namespace AppInstaller::CLI::Workflow
     // Outputs: None
     void AddSource(Execution::Context& context);
 
+    // Opens a source before source add command.
+    // Required Args: SourceName, SourceArg
+    // Inputs: None
+    // Outputs: Source
+    void CreateSourceForSourceAdd(Execution::Context& context);
+
     // Lists the sources in SourceList.
     // Required Args: None
     // Inputs: SourceList
@@ -71,4 +77,10 @@ namespace AppInstaller::CLI::Workflow
     // Inputs: SourceList
     // Outputs: None
     void ExportSourceList(Execution::Context& context);
+
+    // Forces an update to the cache of installed packages.
+    // Required Args: None
+    // Inputs: None
+    // Outputs: None
+    void ForceInstalledCacheUpdate(Execution::Context& context);
 }

@@ -20,13 +20,16 @@ namespace AppInstaller::CLI
         return { Resource::String::FeaturesCommandLongDescription };
     }
 
-    std::string FeaturesCommand::HelpLink() const
+    Utility::LocIndView FeaturesCommand::HelpLink() const
     {
-        return "https://aka.ms/winget-experimentalfeatures";
+        return "https://aka.ms/winget-experimentalfeatures"_liv;
     }
 
     void FeaturesCommand::ExecuteInternal(Execution::Context& context) const
     {
+#ifdef WINGET_DISABLE_EXPERIMENTAL_FEATURES
+        context.Reporter.Info() << Resource::String::FeaturesMessageDisabledByBuild << std::endl;
+#else
         if (GroupPolicies().IsEnabled(TogglePolicy::Policy::ExperimentalFeatures) &&
             GroupPolicies().IsEnabled(TogglePolicy::Policy::Settings))
         {
@@ -50,7 +53,7 @@ namespace AppInstaller::CLI
             {
                 table.OutputLine({
                     std::string{ feature.Name() },
-                    Resource::Loader::Instance().ResolveString(ExperimentalFeature::IsEnabled(feature.GetFeature()) ? Resource::String::FeaturesEnabled : Resource::String::FeaturesDisabled),
+                    Resource::LocString{ ExperimentalFeature::IsEnabled(feature.GetFeature()) ? Resource::String::FeaturesEnabled : Resource::String::FeaturesDisabled},
                     std::string { feature.JsonName() },
                     std::string{ feature.Link() } });
             }
@@ -61,5 +64,6 @@ namespace AppInstaller::CLI
             // Better work hard to get some out there!
             context.Reporter.Info() << Resource::String::NoExperimentalFeaturesMessage << std::endl;
         }
+#endif
     }
 }

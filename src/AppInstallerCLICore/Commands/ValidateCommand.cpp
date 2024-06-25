@@ -3,11 +3,14 @@
 #include "pch.h"
 #include "ValidateCommand.h"
 #include "Workflows/WorkflowBase.h"
+#include "Workflows/DependenciesFlow.h"
 #include "Resources.h"
+#include <winget/ManifestYamlParser.h>
 
 namespace AppInstaller::CLI
 {
     using namespace std::string_view_literals;
+    using namespace AppInstaller::Manifest;
 
     std::vector<Argument> ValidateCommand::GetArguments() const
     {
@@ -26,9 +29,9 @@ namespace AppInstaller::CLI
         return Resource::LocString{ Resource::String::ValidateCommandLongDescription };
     }
 
-    std::string ValidateCommand::HelpLink() const
+    Utility::LocIndView ValidateCommand::HelpLink() const
     {
-        return "https://aka.ms/winget-command-validate";
+        return "https://aka.ms/winget-command-validate"_liv;
     }
 
     void ValidateCommand::ExecuteInternal(Execution::Context& context) const
@@ -41,10 +44,19 @@ namespace AppInstaller::CLI
 
             try
             {
-                (void)Manifest::YamlParser::CreateFromPath(inputFile, true, true);
+                ManifestValidateOption validateOption;
+                validateOption.FullValidation = true;
+                validateOption.ThrowOnWarning = !(context.Args.Contains(Execution::Args::Type::IgnoreWarnings));
+                auto manifest = YamlParser::CreateFromPath(inputFile, validateOption);
+
+                context.Add<Execution::Data::Manifest>(manifest);
+                context <<
+                    Workflow::GetInstallersDependenciesFromManifest <<
+                    Workflow::ReportDependencies(Resource::String::ValidateCommandReportDependencies);
+
                 context.Reporter.Info() << Resource::String::ManifestValidationSuccess << std::endl;
             }
-            catch (const Manifest::ManifestException& e)
+            catch (const ManifestException& e)
             {
                 HRESULT hr = S_OK;
                 if (e.IsWarningOnly())

@@ -14,3 +14,12 @@ EXPORTS
     WinGetDownload
     WinGetCompareVersions
     WinGetValidateManifestV2
+    WinGetValidateManifestDependencies
+    WinGetCreateManifest
+    WinGetCloseManifest
+    WinGetValidateManifestV3
+    WinGetBeginInstallerMetadataCollection
+    WinGetCompleteInstallerMetadataCollection
+    WinGetMergeInstallerMetadata
+    WinGetSQLiteIndexMigrate
+    WinGetSQLiteIndexSetProperty

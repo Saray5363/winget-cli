@@ -17,9 +17,9 @@
     },
     "Locale": {
       "type": [ "string", "null" ],
-      "minLength": 1,
+      "pattern": "^([a-zA-Z]{2,3}|[iI]-[a-zA-Z]+|[xX]-[a-zA-Z]{1,8})(-[a-zA-Z]{1,8})*$",
       "maxLength": 20,
-      "description": "The package meta-data locale"
+      "description": "The installer meta-data locale"
     },
     "Channel": {
       "type": [ "string", "null" ],
@@ -53,7 +53,6 @@
         "msi",
         "appx",
         "exe",
-        "zip",
         "inno",
         "nullsoft",
         "wix",
@@ -136,9 +135,12 @@
       "type": [ "array", "null" ],
       "items": {
         "type": "integer",
+        "format": "long",
         "not": {
           "enum": [ 0 ]
-        }
+        },
+        "minimum": -2147483648,
+        "maximum": 4294967295
       },
       "maxItems": 16,
       "uniqueItems": true,

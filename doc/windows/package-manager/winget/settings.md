@@ -6,15 +6,12 @@ ms.topic: article
 ms.localizationpriority: medium
 ---
 
-# help command (winget)
-
-[!INCLUDE [preview-note](../../includes/package-manager-preview.md)]
+# settings command (winget)
 
 The **settings** command of the [winget](index.md) tool allows you to customize your Windows Package Manager client experience.  You can change defaults and try out experimental features that are enabled in your client.
-The **settings** command will launch your default MD editor.  Windows by default will launch Notepad as an option.  We recommend using a tool like [Visual Studio code](https://code.visualstudio.com/).  
+The **settings** command will launch your default JSON editor. Windows by default will launch Notepad as an option. We recommend using a tool like [Visual Studio code](https://code.visualstudio.com/).
 
->[!NOTE]
->You can easily install Visual Studio Code, by typing `winget install Microsoft.VisualStudioCode`
+> You can easily install Visual Studio Code, by typing `winget install Microsoft.VisualStudioCode`
 
 ## Usage
 
@@ -38,7 +35,7 @@ The `source` settings involve configuration to the WinGet source.
     "source": {
         "autoUpdateIntervalInMinutes": 3
     },
-``` 
+```
 
 #### autoUpdateIntervalInMinutes
 
@@ -61,7 +58,7 @@ The `visual` settings involve visual elements that are displayed by WinGet
 
 #### progressBar
 
-Color of the progress bar that WinGet displays when not specified by arguments. 
+Color of the progress bar that WinGet displays when not specified by arguments.
 
 - accent (default)
 - retro
@@ -105,11 +102,11 @@ The `locale` behavior affects the choice of installer based on installer locale.
 
 The `telemetry` settings control whether winget writes ETW events that may be sent to Microsoft on a default installation of Windows.
 
-See [details on telemetry](https://github.com/microsoft/winget-cli/blob/master/README.md#datatelemetry), and our [primary privacy statement](https://github.com/microsoft/winget-cli/blob/master/privacy.md).
+See [details on telemetry](https://github.com/microsoft/winget-cli/blob/master/README.md#datatelemetry), and our [primary privacy statement](https://github.com/microsoft/winget-cli/blob/master/PRIVACY.md).
 
 #### disable
 
-```
+```json
     "telemetry": {
         "disable": true
     },
@@ -124,8 +121,8 @@ The `network` settings influence how winget uses the network to retrieve package
 #### Downloader
 
 The `downloader` setting controls which code is used when downloading packages. The default is `default`, which may be any of the options based on our determination.
-`wininet` uses the [WinINet](https://docs.microsoft.com/en-us/windows/win32/wininet/about-wininet) APIs, while `do` uses the
-[Delivery Optimization](https://support.microsoft.com/en-us/windows/delivery-optimization-in-windows-10-0656e53c-15f2-90de-a87a-a2172c94cf6d) service.
+`wininet` uses the [WinINet](https://docs.microsoft.com/windows/win32/wininet/about-wininet) APIs, while `do` uses the
+[Delivery Optimization](https://support.microsoft.com/windows/delivery-optimization-in-windows-10-0656e53c-15f2-90de-a87a-a2172c94cf6d) service.
 
 ```json
    "network": {

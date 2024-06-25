@@ -1,6 +1,6 @@
 # WinGet CLI Settings
 
-You can configure WinGet by editing the `settings.json` file. Running `winget settings` will open the file in the default json editor; if no editor is configured, Windows will prompt for you to select an editor, and Notepad is sensible option if you have no other preference.
+You can configure WinGet by editing the `settings.json` file. Running `winget settings` will open the file in the default json editor; if no editor is configured, Windows will prompt for you to select an editor, and Notepad is a sensible option if you have no other preference.
 
 ## File Location
 
@@ -16,7 +16,7 @@ The `source` settings involve configuration to the WinGet source.
     "source": {
         "autoUpdateIntervalInMinutes": 3
     },
-``` 
+```
 
 ### autoUpdateIntervalInMinutes
 
@@ -31,23 +31,83 @@ To manually update the source use `winget source update`
 
 The `visual` settings involve visual elements that are displayed by WinGet
 
+### progressBar
+
+Color of the progress bar that WinGet displays when not specified by arguments.
+
+- accent (default)
+- retro
+- rainbow
+
 ```json
     "visual": {
         "progressBar": "accent"
     },
 ```
 
-### progressBar
+### anonymizeDisplayedPaths
 
-Color of the progress bar that WinGet displays when not specified by arguments. 
+Replaces some known folder paths with their respective environment variable. Defaults to true.
 
-- accent (default)
-- retro
-- rainbow
+```json
+    "visual": {
+        "anonymizeDisplayedPaths": true
+    },
+```
 
 ## Install Behavior
 
 The `installBehavior` settings affect the default behavior of installing and upgrading (where applicable) packages.
+
+### Disable Install Notes
+The `disableInstallNotes` behavior affects whether installation notes are shown after a successful install. Defaults to `false` if value is not set or is invalid.
+
+```json
+    "installBehavior": {
+        "disableInstallNotes": true
+    },
+```
+
+### Portable Package User Root
+The `portablePackageUserRoot` setting affects the default root directory where packages are installed to under `User` scope. This setting only applies to packages with the `portable` installer type. Defaults to `%LOCALAPPDATA%/Microsoft/WinGet/Packages/` if value is not set or is invalid.
+
+> Note: This setting value must be an absolute path.
+
+```json
+    "installBehavior": {
+        "portablePackageUserRoot": "C:/Users/FooBar/Packages"
+    },
+```
+
+### Portable Package Machine Root
+The `portablePackageMachineRoot` setting affects the default root directory where packages are installed to under `Machine` scope. This setting only applies to packages with the `portable` installer type. Defaults to `%PROGRAMFILES%/WinGet/Packages/` if value is not set or is invalid.
+
+> Note: This setting value must be an absolute path.
+
+```json
+    "installBehavior": {
+        "portablePackageMachineRoot": "C:/Program Files/Packages/Portable"
+    },
+```
+
+### Skip Dependencies
+The 'skipDependencies' behavior affects whether dependencies are installed for a given package. Defaults to 'false' if value is not set or is invalid.
+
+```json
+    "installBehavior": {
+        "skipDependencies": true
+    },
+```
+
+### Archive Extraction Method
+The 'archiveExtractionMethod' behavior affects how installer archives are extracted. Currently there are two supported values: `Tar` or `ShellApi`.
+`Tar` indicates that the archive should be extracted using the tar executable ('tar.exe') while `shellApi` indicates using the Windows Shell API. Defaults to `shellApi` if value is not set or is invalid.
+
+```json
+    "installBehavior": {
+        "archiveExtractionMethod": "tar" | "shellApi"
+    },
+```
 
 ### Preferences and Requirements
 
@@ -78,12 +138,59 @@ The `locale` behavior affects the choice of installer based on installer locale.
         }
     },
 ```
+### Architectures
+
+The `architectures` behavior affects what architectures will be selected when installing a package. The matching parameter is `--architecture`. Note that only architectures compatible with your system can be selected.
+
+```json
+    "installBehavior": {
+        "preferences": {
+            "architectures": ["x64", "arm64"]
+        }
+    },
+```
+
+### Installer Types
+
+The `installerTypes` behavior affects what installer types will be selected when installing a package. The matching parameter is `--installer-type`.
+
+```json
+    "installBehavior": {
+        "preferences": {
+            "installerTypes": ["msi", "msix"]
+        }
+    },
+```
+
+### Default install root
+
+The `defaultInstallRoot` affects the install location when a package requires one. This can be overridden by the `--location` parameter. This setting is only used when a package manifest includes `InstallLocationRequired`, and the actual location is obtained by appending the package ID to the root.
+
+```json
+    "installBehavior": {
+        "defaultInstallRoot": "C:/installRoot"
+    },
+```
+
+## Uninstall Behavior
+
+The `uninstallBehavior` settings affect the default behavior of uninstalling (where applicable) packages.
+
+### Purge Portable Package
+
+The `purgePortablePackage` behavior affects the default behavior for uninstalling a portable package. If set to `true`, uninstall will remove all files and directories relevant to the `portable` package. This setting only applies to packages with the `portable` installer type. Defaults to `false` if value is not set or is invalid.
+
+```json
+    "uninstallBehavior": {
+        "purgePortablePackage": true
+    },
+```
 
 ## Telemetry
 
 The `telemetry` settings control whether winget writes ETW events that may be sent to Microsoft on a default installation of Windows.
 
-See [details on telemetry](../README.md#datatelemetry), and our [primary privacy statement](../privacy.md).
+See [details on telemetry](../README.md#datatelemetry), and our [primary privacy statement](../PRIVACY.md).
 
 ### disable
 
@@ -95,6 +202,36 @@ See [details on telemetry](../README.md#datatelemetry), and our [primary privacy
 
 If set to true, the `telemetry.disable` setting will prevent any event from being written by the program.
 
+## Logging
+
+The `logging` settings control the level of detail in log files.
+
+### level
+
+ `--verbose-logs` will override this setting and always creates a verbose log.
+Defaults to `info` if value is not set or is invalid.
+
+```json
+    "logging": {
+        "level": "verbose" | "info" | "warning" | "error" | "critical"
+    },
+```
+
+### channels
+
+The valid values in this array are defined in the function `GetChannelFromName` in the [logging code](../src/AppInstallerSharedLib/AppInstallerLogging.cpp).  These align with the ***channel identifier*** found in the log files.  For example, ***`CORE`*** in:
+```
+2023-12-06 19:17:07.988 [CORE] WinGet, version [1.7.0-preview], activity [{24A91EA8-46BE-47A1-B65C-CEBCE90B8675}]
+```
+
+In addition, there are special values that cover multiple channels.  `default` is the default set of channels, while `all` is all of the channels.  Invalid values are ignored.
+
+```json
+    "logging": {
+        "channels": ["default"]
+    },
+```
+
 ## Network
 
 The `network` settings influence how winget uses the network to retrieve packages and metadata.
@@ -102,18 +239,35 @@ The `network` settings influence how winget uses the network to retrieve package
 ### Downloader
 
 The `downloader` setting controls which code is used when downloading packages. The default is `default`, which may be any of the options based on our determination.
-`wininet` uses the [WinINet](https://docs.microsoft.com/en-us/windows/win32/wininet/about-wininet) APIs, while `do` uses the
-[Delivery Optimization](https://support.microsoft.com/en-us/windows/delivery-optimization-in-windows-10-0656e53c-15f2-90de-a87a-a2172c94cf6d) service.
+`wininet` uses the [WinINet](https://docs.microsoft.com/windows/win32/wininet/about-wininet) APIs, while `do` uses the
+[Delivery Optimization](https://support.microsoft.com/windows/delivery-optimization-in-windows-10-0656e53c-15f2-90de-a87a-a2172c94cf6d) service.
+
+The `doProgressTimeoutInSeconds` setting updates the number of seconds to wait without progress before fallback. The default number of seconds is 60, minimum is 1 and the maximum is 600.
 
 ```json
    "network": {
-       "downloader": "do"
+       "downloader": "do",
+       "doProgressTimeoutInSeconds": 60
    }
 ```
 
+## Interactivity
+
+The `interactivity` settings control whether winget may show interactive prompts during execution. Note that this refers only to prompts shown by winget itself and not to those shown by package installers.
+
+### disable
+
+```json
+    "interactivity": {
+        "disable": true
+    },
+```
+
+If set to true, the `interactivity.disable` setting will prevent any interactive prompt from being shown.
+
 ## Experimental Features
 
-To allow work to be done and distributed to early adopters for feedback, settings can be used to enable "experimental" features. 
+To allow work to be done and distributed to early adopters for feedback, settings can be used to enable "experimental" features.
 
 The `experimentalFeatures` settings involve the configuration of these "experimental" features. Individual features can be enabled under this node. The example below shows sample experimental features.
 
@@ -124,22 +278,75 @@ The `experimentalFeatures` settings involve the configuration of these "experime
    },
 ```
 
-### experimentalMSStore
+### directMSI
 
-Microsoft Store App support in WinGet is currently implemented as an experimental feature. It supports a curated list of utility apps from Microsoft Store. You can enable the feature as shown below.
+This feature enables the Windows Package Manager to directly install MSI packages with the MSI APIs rather than through msiexec.
+Note that when silent installation is used this is already in affect, as MSI packages that require elevation will fail in that scenario without it.
+You can enable the feature as shown below.
 
 ```json
    "experimentalFeatures": {
-       "experimentalMSStore": true
+       "directMSI": true
    },
 ```
 
-### packagedAPI
+### resume
 
-Support in WinGet for packaged callers is currently implemented as an experimental feature. It allows other programs on Windows to use the Windows Package Manager. You can enable the feature as shown below.
+This feature enables support for some commands to resume.
+You can enable the feature as shown below.
 
 ```json
    "experimentalFeatures": {
-       "packagedAPI": true
+       "resume": true
+   },
+```
+
+### configuration03
+
+This feature enables the configuration schema 0.3.
+You can enable the feature as shown below.
+
+```json
+   "experimentalFeatures": {
+       "configuration03": true
+   },
+```
+
+### configureSelfElevate
+
+This feature enables configure commands to request elevation as needed.
+Currently, this means that properly attributed configuration units (and only those) will be run through an elevated process while the rest are run from the current context.
+
+```json
+   "experimentalFeatures": {
+       "configureSelfElevate": true
+   },
+```
+
+### configureExport
+
+This feature enables exporting a configuration file.
+You can enable the feature as shown below.
+
+```json
+   "experimentalFeatures": {
+       "configureExport": true
+   },
+```
+
+### indexV2
+
+This feature enables the `winget` source to retrieve the V2 index, which is significantly smaller.
+Regardless of the state of this feature, if the index on the machine contains a V2 index, it will be used.
+If there is a bug with the V2 index stopping the `winget` CLI from working, disable the feature in your settings file and run this command:
+```
+> winget uninstall -s msstore Microsoft.Winget.Source_8wekyb3d8bbwe
+```
+
+You can enable the feature as shown below.
+
+```json
+   "experimentalFeatures": {
+       "indexV2": true
    },
 ```

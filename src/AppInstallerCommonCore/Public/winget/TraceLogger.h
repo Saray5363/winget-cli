@@ -19,6 +19,12 @@ namespace AppInstaller::Logging
 
         // ILogger
         std::string GetName() const override;
+
         void Write(Channel channel, Level, std::string_view message) noexcept override;
+
+        void WriteDirect(Channel channel, Level level, std::string_view message) noexcept override;
+
+        // Adds a TraceLogger to the current Log
+        static void Add();
     };
 }

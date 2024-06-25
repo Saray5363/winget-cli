@@ -9,13 +9,25 @@
 #include "InstallOptions.h"
 #pragma warning( pop )
 #include "InstallOptions.g.cpp"
+#include "Converters.h"
 #include "Helpers.h"
 
-const GUID InstallOptionsCLSID1 = { 0x1095F097, 0xEB96, 0x453B, 0xB4, 0xE6, 0x16, 0x13, 0x63, 0x7F, 0x3B, 0x14 };  //1095F097-EB96-453B-B4E6-1613637F3B14
-const GUID InstallOptionsCLSID2 = { 0x05F7019A, 0x8FAC, 0x4422, 0xBC, 0xD5, 0x4C, 0xB3, 0x4F, 0xFB, 0x44, 0xA8 };  //05F7019A-8FAC-4422-BCD5-4CB34FFB44A8
+#include <AppInstallerArchitecture.h>
 
 namespace winrt::Microsoft::Management::Deployment::implementation
 {
+    InstallOptions::InstallOptions()
+    {
+        // Populate the allowed architectures with the default values for the machine
+        for (AppInstaller::Utility::Architecture architecture : AppInstaller::Utility::GetApplicableArchitectures())
+        {
+            auto convertedArchitecture = GetWindowsSystemProcessorArchitecture(architecture);
+            if (convertedArchitecture)
+            {
+                m_allowedArchitectures.Append(convertedArchitecture.value());
+            }
+        }
+    }
     winrt::Microsoft::Management::Deployment::PackageVersionId InstallOptions::PackageVersionId()
     {
         return m_packageVersionId;
@@ -48,6 +60,14 @@ namespace winrt::Microsoft::Management::Deployment::implementation
     {
         m_packageInstallMode = value;
     }
+    winrt::Microsoft::Management::Deployment::PackageInstallerType InstallOptions::InstallerType()
+    {
+        return m_installerType;
+    }
+    void InstallOptions::InstallerType(winrt::Microsoft::Management::Deployment::PackageInstallerType const& value)
+    {
+        m_installerType = value;
+    }
     hstring InstallOptions::LogOutputPath()
     {
         return hstring(m_logOutputPath);
@@ -64,6 +84,14 @@ namespace winrt::Microsoft::Management::Deployment::implementation
     {
         m_allowHashMismatch = value;
     }
+    bool InstallOptions::BypassIsStoreClientBlockedPolicyCheck()
+    {
+        return m_bypassIsStoreClientBlockedPolicyCheck;
+    }
+    void InstallOptions::BypassIsStoreClientBlockedPolicyCheck(bool value)
+    {
+        m_bypassIsStoreClientBlockedPolicyCheck = value;
+    }
     hstring InstallOptions::ReplacementInstallerArguments()
     {
         return hstring(m_replacementInstallerArguments);
@@ -71,6 +99,14 @@ namespace winrt::Microsoft::Management::Deployment::implementation
     void InstallOptions::ReplacementInstallerArguments(hstring const& value)
     {
         m_replacementInstallerArguments = value;
+    }
+    hstring InstallOptions::AdditionalInstallerArguments()
+    {
+        return hstring(m_additionalInstallerArguments);
+    }
+    void InstallOptions::AdditionalInstallerArguments(hstring const& value)
+    {
+        m_additionalInstallerArguments = value;
     }
     hstring InstallOptions::CorrelationData()
     {
@@ -88,6 +124,41 @@ namespace winrt::Microsoft::Management::Deployment::implementation
     {
         m_additionalPackageCatalogArguments = value;
     }
-    CoCreatableCppWinRtClassWithCLSID(InstallOptions, 1, &InstallOptionsCLSID1);
-    CoCreatableCppWinRtClassWithCLSID(InstallOptions, 2, &InstallOptionsCLSID2);
+    winrt::Windows::Foundation::Collections::IVector<winrt::Windows::System::ProcessorArchitecture> InstallOptions::AllowedArchitectures()
+    {
+        return m_allowedArchitectures;
+    }
+    bool InstallOptions::AllowUpgradeToUnknownVersion()
+    {
+        return m_allowUpgradeToUnknownVersion;
+    }
+    void InstallOptions::AllowUpgradeToUnknownVersion(bool value)
+    {
+        m_allowUpgradeToUnknownVersion = value;
+    }
+    bool InstallOptions::Force()
+    {
+        return m_force;
+    }
+    void InstallOptions::Force(bool value)
+    {
+        m_force = value;
+    }
+    void InstallOptions::AcceptPackageAgreements(bool value)
+    {
+        m_acceptPackageAgreements = value;
+    }
+    bool InstallOptions::AcceptPackageAgreements()
+    {
+        return m_acceptPackageAgreements;
+    }
+    void InstallOptions::SkipDependencies(bool value)
+    {
+        m_skipDependencies = value;
+    }
+    bool InstallOptions::SkipDependencies()
+    {
+        return m_skipDependencies;
+    }
+    CoCreatableMicrosoftManagementDeploymentClass(InstallOptions);
 }

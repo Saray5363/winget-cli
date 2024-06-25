@@ -23,25 +23,25 @@ namespace AppInstaller::Manifest::YamlParser
 
             if (!entry.Root["PackageIdentifier"])
             {
-                errors.emplace_back(ValidationError::MessageFieldWithFile(
+                errors.emplace_back(ValidationError::MessageContextWithFile(
                     ManifestError::RequiredFieldMissing, "PackageIdentifier", entry.FileName));
             }
 
             if (!entry.Root["PackageVersion"])
             {
-                errors.emplace_back(ValidationError::MessageFieldWithFile(
+                errors.emplace_back(ValidationError::MessageContextWithFile(
                     ManifestError::RequiredFieldMissing, "PackageVersion", entry.FileName));
             }
 
             if (!entry.Root["ManifestVersion"])
             {
-                errors.emplace_back(ValidationError::MessageFieldWithFile(
+                errors.emplace_back(ValidationError::MessageContextWithFile(
                     ManifestError::RequiredFieldMissing, "ManifestVersion", entry.FileName));
             }
 
             if (!entry.Root["ManifestType"])
             {
-                errors.emplace_back(ValidationError::MessageFieldWithFile(
+                errors.emplace_back(ValidationError::MessageContextWithFile(
                     ManifestError::InconsistentMultiFileManifestFieldValue, "ManifestType", entry.FileName));
             }
             else
@@ -53,7 +53,7 @@ namespace AppInstaller::Manifest::YamlParser
                 case ManifestTypeEnum::Version:
                     if (!entry.Root["DefaultLocale"])
                     {
-                        errors.emplace_back(ValidationError::MessageFieldWithFile(
+                        errors.emplace_back(ValidationError::MessageContextWithFile(
                             ManifestError::RequiredFieldMissing, "DefaultLocale", entry.FileName));
                     }
                     break;
@@ -62,7 +62,7 @@ namespace AppInstaller::Manifest::YamlParser
                 case ManifestTypeEnum::DefaultLocale:
                     if (!entry.Root["PackageLocale"])
                     {
-                        errors.emplace_back(ValidationError::MessageFieldWithFile(
+                        errors.emplace_back(ValidationError::MessageContextWithFile(
                             ManifestError::RequiredFieldMissing, "PackageLocale", entry.FileName));
                     }
                     break;
@@ -86,7 +86,7 @@ namespace AppInstaller::Manifest::YamlParser
         // - Validate manifest type correctness
         //   - Allowed file type in multi file manifest: version, installer, defaultLocale, locale
         //   - Allowed file type in single file manifest: preview manifest, merged and singleton
-        ManifestVer ValidateInput(std::vector<YamlManifestInfo>& input, bool fullValidation, bool schemaValidationOnly)
+        ManifestVer ValidateInput(std::vector<YamlManifestInfo>& input, ManifestValidateOption validateOption)
         {
             std::vector<ValidationError> errors;
 
@@ -150,6 +150,7 @@ namespace AppInstaller::Manifest::YamlParser
                     bool isVersionManifestFound = false;
                     bool isInstallerManifestFound = false;
                     bool isDefaultLocaleManifestFound = false;
+                    bool isShadowManifestFound = false;
                     std::string defaultLocaleFromVersionManifest;
                     std::string defaultLocaleFromDefaultLocaleManifest;
 
@@ -158,21 +159,21 @@ namespace AppInstaller::Manifest::YamlParser
                         std::string localPackageId = entry.Root["PackageIdentifier"].as<std::string>();
                         if (localPackageId != packageId)
                         {
-                            errors.emplace_back(ValidationError::MessageFieldValueWithFile(
+                            errors.emplace_back(ValidationError::MessageContextValueWithFile(
                                 ManifestError::InconsistentMultiFileManifestFieldValue, "PackageIdentifier", localPackageId, entry.FileName));
                         }
 
                         std::string localPackageVersion = entry.Root["PackageVersion"].as<std::string>();
                         if (localPackageVersion != packageVersion)
                         {
-                            errors.emplace_back(ValidationError::MessageFieldValueWithFile(
+                            errors.emplace_back(ValidationError::MessageContextValueWithFile(
                                 ManifestError::InconsistentMultiFileManifestFieldValue, "PackageVersion", localPackageVersion, entry.FileName));
                         }
 
                         std::string localManifestVersion = entry.Root["ManifestVersion"].as<std::string>();
                         if (localManifestVersion != manifestVersionStr)
                         {
-                            errors.emplace_back(ValidationError::MessageFieldValueWithFile(
+                            errors.emplace_back(ValidationError::MessageContextValueWithFile(
                                 ManifestError::InconsistentMultiFileManifestFieldValue, "ManifestVersion", localManifestVersion, entry.FileName));
                         }
 
@@ -185,7 +186,7 @@ namespace AppInstaller::Manifest::YamlParser
                         case ManifestTypeEnum::Version:
                             if (isVersionManifestFound)
                             {
-                                errors.emplace_back(ValidationError::MessageFieldValueWithFile(
+                                errors.emplace_back(ValidationError::MessageContextValueWithFile(
                                     ManifestError::DuplicateMultiFileManifestType, "ManifestType", manifestTypeStr, entry.FileName));
                             }
                             else
@@ -197,7 +198,7 @@ namespace AppInstaller::Manifest::YamlParser
                         case ManifestTypeEnum::Installer:
                             if (isInstallerManifestFound)
                             {
-                                errors.emplace_back(ValidationError::MessageFieldValueWithFile(
+                                errors.emplace_back(ValidationError::MessageContextValueWithFile(
                                     ManifestError::DuplicateMultiFileManifestType, "ManifestType", manifestTypeStr, entry.FileName));
                             }
                             else
@@ -208,7 +209,7 @@ namespace AppInstaller::Manifest::YamlParser
                         case ManifestTypeEnum::DefaultLocale:
                             if (isDefaultLocaleManifestFound)
                             {
-                                errors.emplace_back(ValidationError::MessageFieldValueWithFile(
+                                errors.emplace_back(ValidationError::MessageContextValueWithFile(
                                     ManifestError::DuplicateMultiFileManifestType, "ManifestType", manifestTypeStr, entry.FileName));
                             }
                             else
@@ -219,7 +220,7 @@ namespace AppInstaller::Manifest::YamlParser
 
                                 if (localesSet.find(packageLocale) != localesSet.end())
                                 {
-                                    errors.emplace_back(ValidationError::MessageFieldValueWithFile(
+                                    errors.emplace_back(ValidationError::MessageContextValueWithFile(
                                         ManifestError::DuplicateMultiFileManifestLocale, "PackageLocale", packageLocale, entry.FileName));
                                 }
                                 else
@@ -233,17 +234,35 @@ namespace AppInstaller::Manifest::YamlParser
                             auto packageLocale = entry.Root["PackageLocale"sv].as<std::string>();
                             if (localesSet.find(packageLocale) != localesSet.end())
                             {
-                                errors.emplace_back(ValidationError::MessageFieldValueWithFile(
+                                errors.emplace_back(ValidationError::MessageContextValueWithFile(
                                     ManifestError::DuplicateMultiFileManifestLocale, "PackageLocale", packageLocale, entry.FileName));
                             }
                             else
                             {
                                 localesSet.insert(packageLocale);
                             }
+                            break;
                         }
-                        break;
+                        case ManifestTypeEnum::Shadow:
+                        {
+                            if (!validateOption.AllowShadowManifest)
+                            {
+                                errors.emplace_back(ValidationError::MessageContextValueWithFile(
+                                    ManifestError::ShadowManifestNotAllowed, "ManifestType", manifestTypeStr, entry.FileName));
+                            }
+                            else if (isShadowManifestFound)
+                            {
+                                errors.emplace_back(ValidationError::MessageContextValueWithFile(
+                                    ManifestError::DuplicateMultiFileManifestType, "ManifestType", manifestTypeStr, entry.FileName));
+                            }
+                            else
+                            {
+                                isShadowManifestFound = true;
+                            }
+                            break;
+                        }
                         default:
-                            errors.emplace_back(ValidationError::MessageFieldValueWithFile(
+                            errors.emplace_back(ValidationError::MessageContextValueWithFile(
                                 ManifestError::UnsupportedMultiFileManifestType, "ManifestType", manifestTypeStr, entry.FileName));
                         }
                     }
@@ -253,7 +272,7 @@ namespace AppInstaller::Manifest::YamlParser
                         errors.emplace_back(ManifestError::InconsistentMultiFileManifestDefaultLocale);
                     }
 
-                    if (!schemaValidationOnly && !(isVersionManifestFound && isInstallerManifestFound && isDefaultLocaleManifestFound))
+                    if (!validateOption.SchemaValidationOnly && !(isVersionManifestFound && isInstallerManifestFound && isDefaultLocaleManifestFound))
                     {
                         errors.emplace_back(ManifestError::IncompleteMultiFileManifest);
                     }
@@ -264,12 +283,12 @@ namespace AppInstaller::Manifest::YamlParser
                     ManifestTypeEnum manifestType = ConvertToManifestTypeEnum(manifestTypeStr);
                     firstYamlManifest.ManifestType = manifestType;
 
-                    if (fullValidation && manifestType == ManifestTypeEnum::Merged)
+                    if (validateOption.FullValidation && manifestType == ManifestTypeEnum::Merged)
                     {
-                        errors.emplace_back(ValidationError::MessageFieldValueWithFile(ManifestError::FieldValueNotSupported, "ManifestType", manifestTypeStr, firstYamlManifest.FileName));
+                        errors.emplace_back(ValidationError::MessageContextValueWithFile(ManifestError::FieldValueNotSupported, "ManifestType", manifestTypeStr, firstYamlManifest.FileName));
                     }
 
-                    if (!schemaValidationOnly && manifestType != ManifestTypeEnum::Merged && manifestType != ManifestTypeEnum::Singleton)
+                    if (!validateOption.SchemaValidationOnly && manifestType != ManifestTypeEnum::Merged && manifestType != ManifestTypeEnum::Singleton)
                     {
                         errors.emplace_back(ValidationError::MessageWithFile(ManifestError::IncompleteMultiFileManifest, firstYamlManifest.FileName));
                     }
@@ -297,6 +316,22 @@ namespace AppInstaller::Manifest::YamlParser
             THROW_HR_IF(E_UNEXPECTED, iter == input.end());
 
             return iter->Root;
+        }
+
+        std::optional<YAML::Node> FindUniqueOptionalDocFromMultiFileManifest(std::vector<YamlManifestInfo>& input, ManifestTypeEnum manifestType)
+        {
+            auto iter = std::find_if(input.begin(), input.end(),
+                [=](auto const& s)
+                {
+                    return s.ManifestType == manifestType;
+                });
+
+            if (iter != input.end())
+            {
+                return iter->Root;
+            }
+
+            return {};
         }
 
         // Merge one manifest file to the final merged manifest, basically copying the mapping but excluding certain common fields
@@ -405,38 +440,50 @@ namespace AppInstaller::Manifest::YamlParser
         std::vector<ValidationError> ParseManifestImpl(
             std::vector<YamlManifestInfo>& input,
             Manifest& manifest,
-            bool fullValidation,
             const std::filesystem::path& mergedManifestPath,
-            bool schemaValidationOnly)
+            ManifestValidateOption validateOption)
         {
             THROW_HR_IF_MSG(E_INVALIDARG, input.size() == 0, "No manifest file found");
-            THROW_HR_IF_MSG(E_INVALIDARG, schemaValidationOnly && !mergedManifestPath.empty(), "Manifest cannot be merged if only schema validation is performed");
+            THROW_HR_IF_MSG(E_INVALIDARG, validateOption.SchemaValidationOnly && !mergedManifestPath.empty(), "Manifest cannot be merged if only schema validation is performed");
             THROW_HR_IF_MSG(E_INVALIDARG, input.size() == 1 && !mergedManifestPath.empty(), "Manifest cannot be merged from a single manifest");
 
-            auto manifestVersion = ValidateInput(input, fullValidation, schemaValidationOnly);
+            auto manifestVersion = ValidateInput(input, validateOption);
 
             std::vector<ValidationError> resultErrors;
 
-            if (fullValidation || schemaValidationOnly)
+            if (validateOption.FullValidation || validateOption.SchemaValidationOnly)
             {
                 resultErrors = ValidateAgainstSchema(input, manifestVersion);
             }
 
-            if (schemaValidationOnly)
+            if (validateOption.SchemaValidationOnly)
             {
                 return resultErrors;
             }
 
             // Merge manifests in multi file manifest case
-            const YAML::Node& manifestDoc = (input.size() > 1) ? MergeMultiFileManifest(input) : input[0].Root;
+            bool isMultiFile = input.size() > 1;
+            YAML::Node& manifestDoc = input[0].Root;
+            if (isMultiFile)
+            {
+                manifestDoc = MergeMultiFileManifest(input);
+            }
 
-            auto errors = ManifestYamlPopulator::PopulateManifest(manifestDoc, manifest, manifestVersion, fullValidation);
+            auto shadowNode = isMultiFile ? FindUniqueOptionalDocFromMultiFileManifest(input, ManifestTypeEnum::Shadow) : std::optional<YAML::Node>{};
+
+            auto errors = ManifestYamlPopulator::PopulateManifest(manifestDoc, manifest, manifestVersion, validateOption, shadowNode);
             std::move(errors.begin(), errors.end(), std::inserter(resultErrors, resultErrors.end()));
 
             // Extra semantic validations after basic validation and field population
-            if (fullValidation)
+            if (validateOption.FullValidation)
             {
                 errors = ValidateManifest(manifest);
+                std::move(errors.begin(), errors.end(), std::inserter(resultErrors, resultErrors.end()));
+            }
+
+            if (validateOption.InstallerValidation)
+            {
+                errors = ValidateManifestInstallers(manifest);
                 std::move(errors.begin(), errors.end(), std::inserter(resultErrors, resultErrors.end()));
             }
 
@@ -458,10 +505,8 @@ namespace AppInstaller::Manifest::YamlParser
 
     Manifest CreateFromPath(
         const std::filesystem::path& inputPath,
-        bool fullValidation,
-        bool throwOnWarning,
-        const std::filesystem::path& mergedManifestPath,
-        bool schemaValidationOnly)
+        ManifestValidateOption validateOption,
+        const std::filesystem::path& mergedManifestPath)
     {
         std::vector<YamlManifestInfo> docList;
 
@@ -489,18 +534,16 @@ namespace AppInstaller::Manifest::YamlParser
         }
         catch (const std::exception& e)
         {
-            THROW_EXCEPTION_MSG(ManifestException(), e.what());
+            THROW_EXCEPTION_MSG(ManifestException(), "%hs", e.what());
         }
 
-        return ParseManifest(docList, fullValidation, throwOnWarning, mergedManifestPath, schemaValidationOnly);
+        return ParseManifest(docList, validateOption, mergedManifestPath);
     }
 
     Manifest Create(
         const std::string& input,
-        bool fullValidation,
-        bool throwOnWarning,
-        const std::filesystem::path& mergedManifestPath,
-        bool schemaValidationOnly)
+        ManifestValidateOption validateOption,
+        const std::filesystem::path& mergedManifestPath)
     {
         std::vector<YamlManifestInfo> docList;
 
@@ -512,25 +555,23 @@ namespace AppInstaller::Manifest::YamlParser
         }
         catch (const std::exception& e)
         {
-            THROW_EXCEPTION_MSG(ManifestException(), e.what());
+            THROW_EXCEPTION_MSG(ManifestException(), "%hs", e.what());
         }
 
-        return ParseManifest(docList, fullValidation, throwOnWarning, mergedManifestPath, schemaValidationOnly);
+        return ParseManifest(docList, validateOption, mergedManifestPath);
     }
 
     Manifest ParseManifest(
         std::vector<YamlManifestInfo>& input,
-        bool fullValidation,
-        bool throwOnWarning,
-        const std::filesystem::path& mergedManifestPath,
-        bool schemaValidationOnly)
+        ManifestValidateOption validateOption,
+        const std::filesystem::path& mergedManifestPath)
     {
         Manifest manifest;
         std::vector<ValidationError> errors;
 
         try
         {
-            errors = ParseManifestImpl(input, manifest, fullValidation, mergedManifestPath, schemaValidationOnly);
+            errors = ParseManifestImpl(input, manifest, mergedManifestPath, validateOption);
         }
         catch (const ManifestException&)
         {
@@ -539,14 +580,14 @@ namespace AppInstaller::Manifest::YamlParser
         }
         catch (const std::exception& e)
         {
-            THROW_EXCEPTION_MSG(ManifestException(), e.what());
+            THROW_EXCEPTION_MSG(ManifestException(), "%hs", e.what());
         }
 
         if (!errors.empty())
         {
             ManifestException ex{ std::move(errors) };
 
-            if (throwOnWarning || !ex.IsWarningOnly())
+            if (validateOption.ThrowOnWarning || !ex.IsWarningOnly())
             {
                 THROW_EXCEPTION(ex);
             }

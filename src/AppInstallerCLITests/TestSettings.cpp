@@ -9,19 +9,52 @@ using namespace AppInstaller::Settings;
 
 namespace TestCommon
 {
-    void DeleteUserSettingsFiles()
+    namespace
     {
-        auto settingsPath = UserSettings::SettingsFilePath();
-        if (std::filesystem::exists(settingsPath))
+        void DeleteUserSettingsFilesInternal()
         {
-            std::filesystem::remove(settingsPath);
-        }
+            auto settingsPath = UserSettings::SettingsFilePath();
+            if (std::filesystem::exists(settingsPath))
+            {
+                std::filesystem::remove(settingsPath);
+            }
 
-        auto settingsBackupPath = GetPathTo(Streams::BackupUserSettings);
-        if (std::filesystem::exists(settingsBackupPath))
-        {
-            std::filesystem::remove(settingsBackupPath);
+            auto settingsBackupPath = GetPathTo(Stream::BackupUserSettings);
+            if (std::filesystem::exists(settingsBackupPath))
+            {
+                std::filesystem::remove(settingsBackupPath);
+            }
         }
+    }
+
+    void SetSetting(const AppInstaller::Settings::StreamDefinition& stream, std::string_view value)
+    {
+        REQUIRE(Stream{ stream }.Set(value));
+    }
+
+    void RemoveSetting(const AppInstaller::Settings::StreamDefinition& stream)
+    {
+        Stream{ stream }.Remove();
+    }
+
+    std::filesystem::path GetPathTo(const AppInstaller::Settings::StreamDefinition& stream)
+    {
+        return Stream{ stream }.GetPath();
+    }
+
+    UserSettingsFileGuard::UserSettingsFileGuard()
+    {
+        DeleteUserSettingsFilesInternal();
+    }
+
+    UserSettingsFileGuard::~UserSettingsFileGuard()
+    {
+        DeleteUserSettingsFilesInternal();
+    }
+
+    [[nodiscard]] UserSettingsFileGuard DeleteUserSettingsFiles()
+    {
+        return {};
     }
 
     GroupPolicyTestOverride::GroupPolicyTestOverride(const AppInstaller::Registry::Key& key) : GroupPolicy(key)

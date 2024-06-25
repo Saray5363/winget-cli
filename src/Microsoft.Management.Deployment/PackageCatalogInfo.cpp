@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #include "pch.h"
-#include <AppInstallerRepositorySource.h>
 #include "PackageCatalogInfo.h"
 #include "PackageCatalogInfo.g.cpp"
 #include <wil\cppwinrt_wrl.h>
@@ -12,7 +11,7 @@ namespace winrt::Microsoft::Management::Deployment::implementation
     {
         m_sourceDetails = sourceDetails;
     }
-    ::AppInstaller::Repository::SourceDetails PackageCatalogInfo::GetSourceDetails()
+    ::AppInstaller::Repository::SourceDetails& PackageCatalogInfo::GetSourceDetails()
     {
         return m_sourceDetails;
     }

@@ -3,14 +3,19 @@
 #pragma once
 #include <AppInstallerStrings.h>
 #include <AppInstallerVersions.h>
-
+#include <functional>
 #include <map>
+#include <set>
 #include <string_view>
 
 namespace AppInstaller::Manifest
 {
+    // Forward declaration
+    struct ManifestInstaller;
+
     using string_t = Utility::NormalizedString;
     using namespace std::string_view_literals;
+    using Utility::RawVersion;
 
     // The maximum supported major version known about by this code.
     constexpr uint64_t s_MaxSupportedMajorVersion = 1;
@@ -21,8 +26,38 @@ namespace AppInstaller::Manifest
     // V1 manifest version for GA
     constexpr std::string_view s_ManifestVersionV1 = "1.0.0"sv;
 
+    // V1.1 manifest version
+    constexpr std::string_view s_ManifestVersionV1_1 = "1.1.0"sv;
+
+    // V1.2 manifest version
+    constexpr std::string_view s_ManifestVersionV1_2 = "1.2.0"sv;
+
+    // V1.4 manifest version
+    constexpr std::string_view s_ManifestVersionV1_4 = "1.4.0"sv;
+
+    // V1.5 manifest version
+    constexpr std::string_view s_ManifestVersionV1_5 = "1.5.0"sv;
+
+    // V1.6 manifest version
+    constexpr std::string_view s_ManifestVersionV1_6 = "1.6.0"sv;
+
+    // V1.7 manifest version
+    constexpr std::string_view s_ManifestVersionV1_7 = "1.7.0"sv;
+
     // The manifest extension for the MS Store
     constexpr std::string_view s_MSStoreExtension = "msstore"sv;
+
+    struct ManifestValidateOption
+    {
+        bool SchemaValidationOnly = false;
+        bool ErrorOnVerifiedPublisherFields = false;
+        bool InstallerValidation = false;
+
+        // Options not exposed in winget util
+        bool FullValidation = false;
+        bool ThrowOnWarning = false;
+        bool AllowShadowManifest = false;
+    };
 
     // ManifestVer is inherited from Utility::Version and is a more restricted version.
     // ManifestVer is used to specify the version of app manifest itself.
@@ -43,7 +78,7 @@ namespace AppInstaller::Manifest
         bool HasExtension(std::string_view extension) const;
 
     private:
-        std::vector<Version> m_extensions;
+        std::vector<RawVersion> m_extensions;
     };
 
     enum class InstallerTypeEnum
@@ -58,6 +93,7 @@ namespace AppInstaller::Manifest
         Exe,
         Burn,
         MSStore,
+        Portable,
     };
 
     enum class UpdateBehaviorEnum
@@ -65,6 +101,7 @@ namespace AppInstaller::Manifest
         Unknown,
         Install,
         UninstallPrevious,
+        Deny,
     };
 
     enum class InstallerSwitchType
@@ -77,6 +114,15 @@ namespace AppInstaller::Manifest
         Log,
         InstallLocation,
         Update,
+        Repair,
+    };
+
+    enum class RepairBehaviorEnum
+    {
+        Unknown,
+        Modify,
+        Installer,
+        Uninstaller,
     };
 
     enum class ScopeEnum
@@ -94,11 +140,61 @@ namespace AppInstaller::Manifest
         SilentWithProgress,
     };
 
+    enum class ExpectedReturnCodeEnum
+    {
+        Unknown,
+        PackageInUse,
+        PackageInUseByApplication,
+        InstallInProgress,
+        FileInUse,
+        MissingDependency,
+        DiskFull,
+        InsufficientMemory,
+        InvalidParameter,
+        NoNetwork,
+        ContactSupport,
+        RebootRequiredToFinish,
+        RebootRequiredForInstall,
+        RebootInitiated,
+        CancelledByUser,
+        AlreadyInstalled,
+        Downgrade,
+        BlockedByPolicy,
+        SystemNotSupported,
+        Custom,
+    };
+
     enum class PlatformEnum
     {
         Unknown,
         Universal,
         Desktop,
+        IoT,
+        Team,
+        Holographic,
+    };
+
+    enum class ElevationRequirementEnum
+    {
+        Unknown,
+        ElevationRequired,
+        ElevationProhibited,
+        ElevatesSelf,
+    };
+
+    enum class UnsupportedArgumentEnum
+    {
+        Unknown,
+        Log,
+        Location
+    };
+
+    enum class InstalledFileTypeEnum
+    {
+        Unknown,
+        Launch,
+        Uninstall,
+        Other,
     };
 
     enum class ManifestTypeEnum
@@ -110,22 +206,158 @@ namespace AppInstaller::Manifest
         Locale,
         Merged,
         Preview,
+        Shadow,
     };
 
-    struct PackageDependency
+    enum class DependencyType
     {
-        string_t Id;
-        string_t MinVersion;
+        WindowsFeature,
+        WindowsLibrary,
+        Package,
+        External
+    };
+
+    enum class IconFileTypeEnum
+    {
+        Unknown,
+        Jpeg,
+        Png,
+        Ico,
+    };
+
+    enum class IconThemeEnum
+    {
+        Unknown,
+        Default,
+        Light,
+        Dark,
+        HighContrast,
+    };
+
+    // Icon resolutions from https://learn.microsoft.com/en-us/windows/apps/design/style/iconography/app-icon-construction#app-icon
+    enum class IconResolutionEnum
+    {
+        Unknown,
+        Custom,
+        Square16,
+        Square20,
+        Square24,
+        Square30,
+        Square32,
+        Square36,
+        Square40,
+        Square48,
+        Square60,
+        Square64,
+        Square72,
+        Square80,
+        Square96,
+        Square256,
+    };
+
+    struct ExpectedReturnCode
+    {
+        DWORD InstallerReturnCode = 0;
+        ExpectedReturnCodeEnum ReturnResponse = ExpectedReturnCodeEnum::Unknown;
+        string_t ReturnResponseUrl;
     };
 
     struct Dependency
     {
-        std::vector<string_t> WindowsFeatures;
-        std::vector<string_t> WindowsLibraries;
-        std::vector<PackageDependency> PackageDependencies;
-        std::vector<string_t> ExternalDependencies;
+        DependencyType Type;
+        const string_t& Id() const { return m_id; };
+        std::optional<Utility::Version> MinVersion;
+
+        Dependency(DependencyType type, string_t id, string_t minVersion) : Type(type), m_id(std::move(id)), MinVersion(Utility::Version(minVersion)), m_foldedId(FoldCase(m_id)) {}
+        Dependency(DependencyType type, string_t id) : Type(type), m_id(std::move(id)), m_foldedId(FoldCase(m_id)){}
+        Dependency(DependencyType type) : Type(type) {}
+
+        bool operator ==(const Dependency& rhs) const
+        {
+            return Type == rhs.Type && m_foldedId == rhs.m_foldedId && MinVersion == rhs.MinVersion;
+        }
+
+        bool operator <(const Dependency& rhs) const
+        {
+            return m_foldedId < rhs.m_foldedId;
+        }
+
+        bool IsVersionOk(Utility::Version version)
+        {
+            return MinVersion <= Utility::Version(version);
+        }
+
+        // m_foldedId should be set whenever Id is set
+        void SetId(string_t id)
+        {
+            m_id = std::move(id);
+            m_foldedId = FoldCase(m_id);
+        }
+
+    private:
+        string_t m_id;
+        std::string m_foldedId;
     };
 
+    struct DependencyList
+    {
+        void Add(const Dependency& newDependency);
+        void Add(const DependencyList& otherDependencyList);
+        bool HasAny() const;
+        bool HasAnyOf(DependencyType type) const;
+        Dependency* HasDependency(const Dependency& dependencyToSearch);
+        void ApplyToType(DependencyType type, std::function<void(const Dependency&)> func) const;
+        void ApplyToAll(std::function<void(const Dependency&)> func) const;
+        bool Empty() const;
+        void Clear();
+        bool HasExactDependency(DependencyType type, string_t id, string_t minVersion = "");
+        size_t Size();
+
+    private:
+        std::vector<Dependency> m_dependencies;
+    };
+
+    struct AppsAndFeaturesEntry
+    {
+        string_t DisplayName;
+        string_t Publisher;
+        string_t DisplayVersion;
+        string_t ProductCode;
+        string_t UpgradeCode;
+        InstallerTypeEnum InstallerType = InstallerTypeEnum::Unknown;
+    };
+
+    struct MarketsInfo
+    {
+        std::vector<string_t> AllowedMarkets;
+        std::vector<string_t> ExcludedMarkets;
+    };
+
+    struct NestedInstallerFile
+    {
+        string_t RelativeFilePath;
+        string_t PortableCommandAlias;
+    };
+
+    struct InstalledFile
+    {
+        string_t RelativeFilePath;
+        std::vector<BYTE> FileSha256;
+        InstalledFileTypeEnum FileType = InstalledFileTypeEnum::Other;
+        string_t InvocationParameter;
+        string_t DisplayName;
+    };
+
+    struct InstallationMetadataInfo
+    {
+        string_t DefaultInstallLocation;
+        std::vector<InstalledFile> Files;
+
+        // Checks if there are any installation metadata available.
+        bool HasData() const { return !DefaultInstallLocation.empty() || !Files.empty(); }
+
+        void Clear() { DefaultInstallLocation.clear(); Files.clear(); }
+    };
 
     InstallerTypeEnum ConvertToInstallerTypeEnum(const std::string& in);
 
@@ -135,23 +367,94 @@ namespace AppInstaller::Manifest
 
     InstallModeEnum ConvertToInstallModeEnum(const std::string& in);
 
-    PlatformEnum ConvertToPlatformEnum(const std::string& in);
+    PlatformEnum ConvertToPlatformEnum(std::string_view in);
+
+    PlatformEnum ConvertToPlatformEnumForMSStoreDownload(std::string_view in);
+
+    ElevationRequirementEnum ConvertToElevationRequirementEnum(const std::string& in);
+
+    UnsupportedArgumentEnum ConvertToUnsupportedArgumentEnum(const std::string& in);
 
     ManifestTypeEnum ConvertToManifestTypeEnum(const std::string& in);
 
+    ExpectedReturnCodeEnum ConvertToExpectedReturnCodeEnum(const std::string& in);
+
+    InstalledFileTypeEnum ConvertToInstalledFileTypeEnum(const std::string& in);
+
+    IconFileTypeEnum ConvertToIconFileTypeEnum(std::string_view in);
+
+    IconThemeEnum ConvertToIconThemeEnum(std::string_view in);
+
+    IconResolutionEnum ConvertToIconResolutionEnum(std::string_view in);
+
+    RepairBehaviorEnum ConvertToRepairBehaviorEnum(std::string_view in);
+
     std::string_view InstallerTypeToString(InstallerTypeEnum installerType);
+
+    std::string_view InstallerSwitchTypeToString(InstallerSwitchType installerSwitchType);
+
+    std::string_view ElevationRequirementToString(ElevationRequirementEnum elevationRequirement);
+
+    std::string_view InstallModeToString(InstallModeEnum installMode);
+
+    std::string_view UnsupportedArgumentToString(UnsupportedArgumentEnum unsupportedArgument);
+
+    std::string_view UpdateBehaviorToString(UpdateBehaviorEnum updateBehavior);
+
+    std::string_view RepairBehaviorToString(RepairBehaviorEnum repairBehavior);
+
+    std::string_view PlatformToString(PlatformEnum platform);
 
     std::string_view ScopeToString(ScopeEnum scope);
 
-    // Gets a value indicating whether the given installer type uses the PackageFamilyName system reference.
+    std::string_view InstalledFileTypeToString(InstalledFileTypeEnum installedFileType);
+
+    std::string_view IconFileTypeToString(IconFileTypeEnum iconFileType);
+
+    std::string_view IconThemeToString(IconThemeEnum iconTheme);
+
+    std::string_view IconResolutionToString(IconResolutionEnum iconResolution);
+
+    std::string_view ManifestTypeToString(ManifestTypeEnum manifestType);
+
+    std::string_view ExpectedReturnCodeToString(ExpectedReturnCodeEnum expectedReturnCode);
+
+    // Gets a value indicating whether the given installer uses the PackageFamilyName system reference.
     bool DoesInstallerTypeUsePackageFamilyName(InstallerTypeEnum installerType);
 
-    // Gets a value indicating whether the given installer type uses the ProductCode system reference.
+    // Gets a value indicating whether the given installer uses the ProductCode system reference.
     bool DoesInstallerTypeUseProductCode(InstallerTypeEnum installerType);
+
+    // Gets a value indicating whether the given installer writes ARP entry.
+    bool DoesInstallerTypeWriteAppsAndFeaturesEntry(InstallerTypeEnum installerType);
+
+    // Gets a value indicating whether the given installer type supports ARP version range.
+    bool DoesInstallerTypeSupportArpVersionRange(InstallerTypeEnum installer);
+
+    // Gets a value indicating whether the given installer ignores the Scope value from the manifest.
+    bool DoesInstallerTypeIgnoreScopeFromManifest(InstallerTypeEnum installerType);
+
+    // Gets a value indicating whether the given installer requires admin for install.
+    bool DoesInstallerTypeRequireAdminForMachineScopeInstall(InstallerTypeEnum installerType);
+
+    // Gets a value indicating whether the given installer requires RepairBehavior for repair.
+    bool DoesInstallerTypeRequireRepairBehaviorForRepair(InstallerTypeEnum installerType);
+
+    // Gets a value indicating whether the given installer type is an archive.
+    bool IsArchiveType(InstallerTypeEnum installerType);
+
+    // Gets a value indicating whether the given installer type is a portable.
+    bool IsPortableType(InstallerTypeEnum installerType);
+
+    // Gets a value indicating whether the given nested installer type is supported.
+    bool IsNestedInstallerTypeSupported(InstallerTypeEnum nestedInstallerType);
 
     // Checks whether 2 installer types are compatible. E.g. inno and exe are update compatible
     bool IsInstallerTypeCompatible(InstallerTypeEnum type1, InstallerTypeEnum type2);
 
     // Get a list of default switches for known installer types
     std::map<InstallerSwitchType, Utility::NormalizedString> GetDefaultKnownSwitches(InstallerTypeEnum installerType);
+
+    // Get a list of default return codes for known installer types
+    std::map<DWORD, ExpectedReturnCodeEnum> GetDefaultKnownReturnCodes(InstallerTypeEnum installerType);
 }

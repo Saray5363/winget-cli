@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #include <cstdint>
-#include <string>
+#include <optional>
 #include <winget/ManifestYamlParser.h>
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
@@ -10,7 +10,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
     try
     {
-        AppInstaller::Manifest::Manifest manifest = AppInstaller::Manifest::YamlParser::Create(input, false);
+        AppInstaller::Manifest::Manifest manifest = AppInstaller::Manifest::YamlParser::Create(input);
     }
     catch (...) {}
 
@@ -19,7 +19,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
 #ifndef WINGET_DISABLE_FOR_FUZZING
 
-#include <filesystem>
 #include <AppInstallerStrings.h>
 
 // Emulate libFuzzer main by just sending all files in the corpus (last arg) to the fuzzer.

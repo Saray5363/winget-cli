@@ -41,7 +41,7 @@ namespace AppInstaller::CLI::Execution
             return s_bytesFormatData[ARRAYSIZE(s_bytesFormatData) - 1];
         }
 
-        void OutputBytes(std::ostream& out, uint64_t byteCount)
+        void OutputBytes(BaseStream& out, uint64_t byteCount)
         {
             const BytesFormatData& bfd = GetFormatForSize(byteCount);
 
@@ -76,13 +76,11 @@ namespace AppInstaller::CLI::Execution
             out << ' ' << bfd.Name;
         }
 
-        void SetColor(std::ostream& out, const TextFormat::Color& color, bool enabled)
+        void SetColor(BaseStream& out, const TextFormat::Color& color, bool foregroundOnly)
         {
-            if (enabled)
-            {
-                out << TextFormat::Foreground::Extended(color);
-            }
-            else
+            out << TextFormat::Foreground::Extended(color);
+
+            if (!foregroundOnly)
             {
                 constexpr uint8_t divisor = 3;
 
@@ -91,11 +89,11 @@ namespace AppInstaller::CLI::Execution
                 reduced.G /= divisor;
                 reduced.B /= divisor;
 
-                out << TextFormat::Foreground::Extended(reduced);
+                out << TextFormat::Background::Extended(reduced);
             }
         }
 
-        void SetRainbowColor(std::ostream& out, size_t i, size_t max, bool enabled)
+        void SetRainbowColor(BaseStream& out, size_t i, size_t max, bool foregroundOnly)
         {
             TextFormat::Color rainbow[] =
             {
@@ -125,13 +123,13 @@ namespace AppInstaller::CLI::Execution
                 result = { AICLI_AVERAGE(R), AICLI_AVERAGE(G), AICLI_AVERAGE(B) };
             }
 
-            SetColor(out, result, enabled);
+            SetColor(out, result, foregroundOnly);
         }
     }
 
     namespace details
     {
-        void ProgressVisualizerBase::ApplyStyle(size_t i, size_t max, bool enabled)
+        void ProgressVisualizerBase::ApplyStyle(size_t i, size_t max, bool foregroundOnly)
         {
             if (!UseVT())
             {
@@ -141,24 +139,39 @@ namespace AppInstaller::CLI::Execution
             switch (m_style)
             {
             case VisualStyle::Retro:
-                if (enabled)
-                {
-                    m_out << TextFormat::Default;
-                }
-                else
-                {
-                    m_out << TextFormat::Negative;
-                }
+                m_out << TextFormat::Default;
                 break;
             case VisualStyle::Accent:
-                SetColor(m_out, TextFormat::Color::GetAccentColor(), enabled);
+                SetColor(m_out, TextFormat::Color::GetAccentColor(), foregroundOnly);
                 break;
             case VisualStyle::Rainbow:
-                SetRainbowColor(m_out, i, max, enabled);
+                SetRainbowColor(m_out, i, max, foregroundOnly);
                 break;
             default:
                 LOG_HR(E_UNEXPECTED);
             }
+        }
+
+        void ProgressVisualizerBase::ClearLine()
+        {
+            if (UseVT())
+            {
+                m_out << TextModification::EraseLineEntirely << '\r';
+            }
+            else
+            {
+                m_out << '\r' << std::string(GetConsoleWidth(), ' ') << '\r';
+            }
+        }
+
+        void ProgressVisualizerBase::Message(std::string_view message)
+        {
+            std::atomic_store(&m_message, std::make_shared<Utility::NormalizedString>(message));
+        }
+
+        std::shared_ptr<Utility::NormalizedString> ProgressVisualizerBase::Message()
+        {
+            return std::atomic_load(&m_message);
         }
     }
 
@@ -197,17 +210,37 @@ namespace AppInstaller::CLI::Execution
             }
 
             // Indent two spaces for the spinner, but three here so that we can overwrite it in the loop.
-            m_out << "   ";
+            std::string_view indent = "   ";
+            std::shared_ptr<Utility::NormalizedString> message = this->Message();
+            size_t messageLength = message ? Utility::UTF8ColumnWidth(*message) : 0;
 
             for (size_t i = 0; !m_canceled; ++i)
             {
                 constexpr size_t repetitionCount = 20;
                 ApplyStyle(i % repetitionCount, repetitionCount, true);
-                m_out << '\b' << spinnerChars[i % ARRAYSIZE(spinnerChars)] << std::flush;
+                m_out << '\r' << indent << spinnerChars[i % ARRAYSIZE(spinnerChars)];
+                m_out.RestoreDefault();
+
+                std::shared_ptr<Utility::NormalizedString> newMessage = this->Message();
+                std::string eraser;
+                if (newMessage)
+                {
+                    size_t newLength = Utility::UTF8ColumnWidth(*newMessage);
+
+                    if (newLength < messageLength)
+                    {
+                        eraser = std::string(messageLength - newLength, ' ');
+                    }
+
+                    message = newMessage;
+                    messageLength = newLength;
+                }
+
+                m_out << ' ' << (message ? *message : std::string{}) << eraser << std::flush;
                 Sleep(250);
             }
 
-            m_out << "\b \r";
+            ClearLine();
 
             if (UseVT())
             {
@@ -226,6 +259,7 @@ namespace AppInstaller::CLI::Execution
             ClearLine();
         }
 
+        // TODO: Progress bar does not currently use message
         if (UseVT())
         {
             ShowProgressWithVT(current, maximum, type);
@@ -261,19 +295,6 @@ namespace AppInstaller::CLI::Execution
             }
 
             m_isVisible = false;
-        }
-    }
-
-    void ProgressBar::ClearLine()
-    {
-        if (UseVT())
-        {
-            m_out << TextModification::EraseLineEntirely << '\r';
-        }
-        else
-        {
-            // Best effort when no VT (arbitrary number of spaces that seems to work)
-            m_out << "\r                                                              \r";
         }
     }
 
@@ -334,21 +355,49 @@ namespace AppInstaller::CLI::Execution
 
     void ProgressBar::ShowProgressWithVT(uint64_t current, uint64_t maximum, ProgressType type)
     {
+        m_out << TextFormat::Default;
+
         m_out << "\r  ";
 
         if (maximum)
         {
-            const char* const blockOn = u8"\x2588";
+            const char* const blocks[] =
+            {
+                u8" ",      // block off
+                u8"\x258F", // block 1/8
+                u8"\x258E", // block 2/8
+                u8"\x258D", // block 3/8
+                u8"\x258C", // block 4/8
+                u8"\x258B", // block 5/8
+                u8"\x258A", // block 6/8
+                u8"\x2589", // block 7/8
+                u8"\x2588"  // block on
+            };
+            const char* const blockOn = blocks[8];
+            const char* const blockOff = blocks[0];
             constexpr size_t blockWidth = 30;
 
             double percentage = static_cast<double>(current) / maximum;
             size_t blocksOn = static_cast<size_t>(std::floor(percentage * blockWidth));
+            size_t partialBlockIndex = static_cast<size_t>((percentage * blockWidth - blocksOn) * 8);
             TextFormat::Color accent = TextFormat::Color::GetAccentColor();
 
             for (size_t i = 0; i < blockWidth; ++i)
             {
-                ApplyStyle(i, blockWidth, i < blocksOn);
-                m_out << blockOn;
+                ApplyStyle(i, blockWidth, false);
+
+                if (i < blocksOn)
+                {                    
+                    m_out << blockOn;
+                }
+                else if (i == blocksOn)
+                {
+                    m_out << blocks[partialBlockIndex];
+                }
+                else
+                {
+                    m_out << blockOff;
+                }
             }
 
             m_out << TextFormat::Default;
